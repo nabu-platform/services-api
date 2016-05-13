@@ -1,0 +1,15 @@
+<schema xmlns="http://www.w3.org/2001/XMLSchema" xmlns:structure="http://nabu.be/structure-v1" targetNamespace="http://nabu.be/service-v1" xmlns:tns="http://nabu.be/service-v1" elementFormDefault="qualified">
+
+	<import namespace="http://nabu.be/structure-v1" schemaLocation="classpath:/structure-v1.xsd"/>
+
+	<element name="interface" type="tns:Interface"/>
+
+	<complexType name="Interface">
+    	<sequence>
+	    	<element name="input" minOccurs="0" type="structure:Structure"/>
+	    	<element name="output" minOccurs="0" type="structure:Structure"/>
+	   </sequence>
+	   <attribute name="reference" type="string" use="optional"/>
+    </complexType>
+    
+</schema>
