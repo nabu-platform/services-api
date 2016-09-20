@@ -1,17 +1,15 @@
 package be.nabu.libs.services;
 
-import java.security.Principal;
-
 import be.nabu.libs.artifacts.ArtifactResolverFactory;
 import be.nabu.libs.artifacts.api.Artifact;
 import be.nabu.libs.artifacts.api.ArtifactResolver;
 import be.nabu.libs.cache.api.CacheProvider;
 import be.nabu.libs.metrics.api.MetricInstance;
+import be.nabu.libs.services.api.ExecutionContext;
 import be.nabu.libs.services.api.SecurityContext;
 import be.nabu.libs.services.api.ServiceAuthorizer;
 import be.nabu.libs.services.api.ServiceAuthorizerProvider;
 import be.nabu.libs.services.api.ServiceContext;
-import be.nabu.libs.services.api.ExecutionContext;
 import be.nabu.libs.services.api.ServiceRuntimeTracker;
 import be.nabu.libs.services.api.ServiceRuntimeTrackerProvider;
 import be.nabu.libs.services.api.TransactionContext;
@@ -71,13 +69,6 @@ public class SimpleExecutionContext implements ExecutionContext {
 					return null;
 				}
 			};
-		}
-	}
-	
-	public static class EmptySecurityContext implements SecurityContext {
-		@Override
-		public Principal getPrincipal() {
-			return null;
 		}
 	}
 

@@ -1,7 +1,7 @@
 package be.nabu.libs.services.api;
 
-import java.security.Principal;
+import be.nabu.libs.authentication.api.Token;
 
 public interface ExecutionContextProvider {
-	public ExecutionContext newExecutionContext(Principal principal);
+	public ExecutionContext newExecutionContext(Token primaryToken, Token...alternativeTokens);
 }

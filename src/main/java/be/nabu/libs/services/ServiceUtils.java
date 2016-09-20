@@ -1,6 +1,5 @@
 package be.nabu.libs.services;
 
-import be.nabu.libs.services.SimpleExecutionContext.EmptySecurityContext;
 import be.nabu.libs.services.SimpleExecutionContext.SimpleServiceContext;
 import be.nabu.libs.services.api.ExecutionContext;
 import be.nabu.libs.services.api.SecurityContext;
@@ -22,10 +21,10 @@ public class ServiceUtils {
 		return newExecutionContext(new SimpleServiceContext(), new SimpleTransactionContext(), securityContext);
 	}
 	public static ExecutionContext newExecutionContext(TransactionContext transactionContext) {
-		return newExecutionContext(new SimpleServiceContext(), transactionContext, new EmptySecurityContext());
+		return newExecutionContext(new SimpleServiceContext(), transactionContext, new SimpleSecurityContext());
 	}
 	public static ExecutionContext newExecutionContext() {
-		return newExecutionContext(new SimpleServiceContext(), new SimpleTransactionContext(), new EmptySecurityContext());
+		return newExecutionContext(new SimpleServiceContext(), new SimpleTransactionContext(), new SimpleSecurityContext());
 	}
 	/**
 	 * This checks that all the input and output variables are stringifiable 

@@ -97,7 +97,7 @@ public class ServiceRuntime {
 		try {
 			ServiceAuthorizer authorizer = executionContext.getServiceContext().getServiceAuthorizerProvider().getAuthorizer(this);
 			if (authorizer != null && !authorizer.canRun(this, input)) {
-				throw new ServiceException(executionContext.getSecurityContext().getPrincipal() == null ? NO_AUTHENTICATION : NO_AUTHORIZATION, "Unauthorized");
+				throw new ServiceException(executionContext.getSecurityContext().getToken() == null ? NO_AUTHENTICATION : NO_AUTHORIZATION, "Unauthorized");
 			}
 			
 			// map the input so we can inspect it from the service trackers
