@@ -13,7 +13,7 @@ public class FixedInputServiceInstance implements ServiceInstance {
 
 	FixedInputServiceInstance(FixedInputService definition) {
 		this.definition = definition;
-		this.instance = definition.newInstance();
+		this.instance = definition.getOriginal().newInstance();
 	}
 	
 	@Override
