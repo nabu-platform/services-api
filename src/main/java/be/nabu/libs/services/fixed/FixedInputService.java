@@ -8,8 +8,9 @@ import java.util.Set;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.api.ServiceInstance;
 import be.nabu.libs.services.api.ServiceInterface;
+import be.nabu.libs.services.api.ServiceWrapper;
 
-public class FixedInputService implements Service {
+public class FixedInputService implements ServiceWrapper {
 
 	private Service service;
 	
@@ -47,7 +48,8 @@ public class FixedInputService implements Service {
 		return fixedInputs.keySet();
 	}
 	
-	protected Service getOriginal() {
+	@Override
+	public Service getOriginal() {
 		return service;
 	}
 }
