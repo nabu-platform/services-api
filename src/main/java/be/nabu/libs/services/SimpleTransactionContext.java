@@ -102,7 +102,7 @@ public class SimpleTransactionContext implements TransactionContext {
 
 	@Override
 	public Iterator<String> iterator() {
-		return transactions.keySet().iterator();
+		return new ArrayList<String>(transactions.keySet()).iterator();
 	}
 
 	@Override
