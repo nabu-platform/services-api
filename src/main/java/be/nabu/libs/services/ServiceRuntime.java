@@ -192,32 +192,42 @@ public class ServiceRuntime {
 		}
 		finally {
 			if (getParent() != null) {
+				// if the parent does not have the same execution context, we assume that the current context needs to be cleaned up
+				// TODO: an alternative implementation (if needed) could be added where the transactions of this context are passed to the parent for management
+				// this is however currently not necessary
+				if (!parent.executionContext.equals(executionContext)) {
+					closeAllTransactions();
+				}
 				parent.child = null;
 				runtime.set(parent);
 				parent = null;
 			}
 			else {
 				try {
-					// if there is no parent left, finish all the open transactions
-					for (String transactionId : getExecutionContext().getTransactionContext()) {
-						try {
-							if (exception == null) {
-								getExecutionContext().getTransactionContext().commit(transactionId);
-							}
-							else {
-								getExecutionContext().getTransactionContext().rollback(transactionId);
-							}
-						}
-						catch (Exception e) {
-							if (runtimeTracker != null) {
-								runtimeTracker.error(service, e);
-							}
-						}
-					}
+					closeAllTransactions();
 				}
 				finally {
 					// remove this runtime from the thread local
 					runtime.remove();
+				}
+			}
+		}
+	}
+
+	private void closeAllTransactions() {
+		// if there is no parent left, finish all the open transactions
+		for (String transactionId : getExecutionContext().getTransactionContext()) {
+			try {
+				if (exception == null) {
+					getExecutionContext().getTransactionContext().commit(transactionId);
+				}
+				else {
+					getExecutionContext().getTransactionContext().rollback(transactionId);
+				}
+			}
+			catch (Exception e) {
+				if (runtimeTracker != null) {
+					runtimeTracker.error(service, e);
 				}
 			}
 		}
