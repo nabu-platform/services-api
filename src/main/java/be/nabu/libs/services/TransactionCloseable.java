@@ -1,16 +1,13 @@
 package be.nabu.libs.services;
 
-import java.io.Closeable;
-import java.io.IOException;
-
 import be.nabu.libs.services.api.Transactionable;
 
 public class TransactionCloseable implements Transactionable {
 
-	private Closeable closeable;
+	private AutoCloseable closeable;
 	private boolean disabled;
 
-	public TransactionCloseable(Closeable closeable) {
+	public TransactionCloseable(AutoCloseable closeable) {
 		this.closeable = closeable;
 	}
 	
@@ -30,7 +27,7 @@ public class TransactionCloseable implements Transactionable {
 			try {
 				closeable.close();
 			}
-			catch (IOException e) {
+			catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
@@ -42,7 +39,7 @@ public class TransactionCloseable implements Transactionable {
 			try {
 				closeable.close();
 			}
-			catch (IOException e) {
+			catch (Exception e) {
 				e.printStackTrace();
 			}
 		}
@@ -66,7 +63,7 @@ public class TransactionCloseable implements Transactionable {
 		this.disabled = disabled;
 	}
 
-	public Closeable getCloseable() {
+	public AutoCloseable getCloseable() {
 		return closeable;
 	}
 	
