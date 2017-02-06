@@ -45,6 +45,9 @@ public class ServiceRuntime {
 	
 	private WeakHashMap<ComplexType, List<ParsedPath>> closeables = new WeakHashMap<ComplexType, List<ParsedPath>>();
 	private static ThreadLocal<ServiceRuntime> runtime = new ThreadLocal<ServiceRuntime>();
+	
+	// allows for a context that can exist cross root service runtime and is managed externally by some component
+	private static ThreadLocal<Map<String, Object>> globalContext = new ThreadLocal<Map<String, Object>>();
 	private ServiceRuntime parent, child;
 	private Map<String, Object> context;
 	private ExecutionContext executionContext;
@@ -339,11 +342,14 @@ public class ServiceRuntime {
 
 	public Map<String, Object> getContext() {
 		if (context == null) {
-			if (parent != null) {
-				return parent.getContext();
-			}
-			else {
-				context = new HashMap<String, Object>();
+			context = getGlobalContext();
+			if (context == null) {
+				if (parent != null) {
+					return parent.getContext();
+				}
+				else {
+					context = new HashMap<String, Object>();
+				}
 			}
 		}
 		return context;
@@ -401,4 +407,11 @@ public class ServiceRuntime {
 		return output;
 	}
 	
+	public static void setGlobalContext(Map<String, Object> globalContext) {
+		ServiceRuntime.globalContext.set(globalContext);
+	}
+	
+	public static Map<String, Object> getGlobalContext() {
+		return ServiceRuntime.globalContext.get();
+	}
 }
