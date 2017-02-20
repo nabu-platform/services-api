@@ -8,6 +8,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import be.nabu.libs.cache.api.Cache;
 import be.nabu.libs.cache.api.CacheProvider;
 import be.nabu.libs.metrics.api.MetricInstance;
@@ -76,6 +79,7 @@ public class ServiceRuntime {
 	private ServiceInstance serviceInstance;
 	private ComplexContent input;
 	private ComplexContent output;
+	private Logger logger = LoggerFactory.getLogger(getClass());
 	
 	public static ServiceRuntime getRuntime() {
 		return runtime.get();
@@ -93,6 +97,17 @@ public class ServiceRuntime {
 	public ComplexContent run(ComplexContent input) throws ServiceException {
 		if (runtime.get() != null) {
 			parent = runtime.get();
+			if (parent != null) {
+				ServiceRuntime checking = parent;
+				while (checking != null) {
+					if (checking.equals(this)) {
+						parent = null;
+						logger.error("A circular reference in service runtimes has been found for service: " + (service instanceof DefinedService ? ((DefinedService) service).getId() : service));
+						throw new IllegalStateException("A circular reference in service runtimes has been found for service: " + (service instanceof DefinedService ? ((DefinedService) service).getId() : service));
+					}
+					checking = checking.parent;
+				}
+			}
 			parent.child = this;
 		}
 		runtime.set(this);
@@ -194,16 +209,20 @@ public class ServiceRuntime {
 			throw exception;
 		}
 		finally {
-			if (getParent() != null) {
+			if (parent != null) {
 				// if the parent does not have the same execution context, we assume that the current context needs to be cleaned up
 				// TODO: an alternative implementation (if needed) could be added where the transactions of this context are passed to the parent for management
 				// this is however currently not necessary
-				if (!parent.executionContext.equals(executionContext)) {
-					closeAllTransactions();
+				try {
+					if (!parent.executionContext.equals(executionContext)) {
+						closeAllTransactions();
+					}
 				}
-				parent.child = null;
-				runtime.set(parent);
-				parent = null;
+				finally {
+					parent.child = null;
+					runtime.set(parent);
+					parent = null;
+				}
 			}
 			else {
 				try {
@@ -229,6 +248,7 @@ public class ServiceRuntime {
 				}
 			}
 			catch (Exception e) {
+				logger.warn("Could not close transaction: " + transactionId, e);
 				if (runtimeTracker != null) {
 					runtimeTracker.error(service, e);
 				}
