@@ -249,9 +249,10 @@ public class ServiceRuntime {
 			}
 			catch (Exception e) {
 				logger.warn("Could not close transaction: " + transactionId, e);
-				if (runtimeTracker != null) {
-					runtimeTracker.error(service, e);
-				}
+				// don't call the tracker, otherwise he sees potentially multiple errors after it was either successfully stopped or already had another error
+//				if (runtimeTracker != null) {
+//					runtimeTracker.error(service, e);
+//				}
 			}
 		}
 	}
