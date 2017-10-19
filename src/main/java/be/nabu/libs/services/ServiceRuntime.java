@@ -236,7 +236,7 @@ public class ServiceRuntime {
 		}
 	}
 
-	private void closeAllTransactions() {
+	public void closeAllTransactions() {
 		// if there is no parent left, finish all the open transactions
 		for (String transactionId : getExecutionContext().getTransactionContext()) {
 			try {
@@ -434,5 +434,22 @@ public class ServiceRuntime {
 	
 	public static Map<String, Object> getGlobalContext() {
 		return ServiceRuntime.globalContext.get();
+	}
+	
+	public void registerInThread(boolean inheritParent) {
+		if (runtime.get() != null && inheritParent) {
+			parent = runtime.get();
+			parent.child = this;
+		}
+		runtime.set(this);
+	}
+	
+	public void unregisterInThread() {
+		if (runtime.get() != null && runtime.get().equals(this)) {
+			runtime.set(null);
+		}
+		if (parent != null && equals(parent.child)) {
+			parent.child = null;
+		}
 	}
 }

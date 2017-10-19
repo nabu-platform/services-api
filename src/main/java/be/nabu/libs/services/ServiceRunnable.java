@@ -2,16 +2,18 @@ package be.nabu.libs.services;
 
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.Callable;
 
 import be.nabu.libs.services.ServiceRuntime;
 import be.nabu.libs.services.api.ServiceException;
+import be.nabu.libs.services.api.ServiceResult;
 import be.nabu.libs.services.api.ServiceRunnableObserver;
 import be.nabu.libs.types.api.ComplexContent;
 
 /**
  * A lightweight class that wraps around a service runtime and allows it to be run in a different thread (e.g. using thread pools)
  */
-public class ServiceRunnable implements Runnable {
+public class ServiceRunnable implements Runnable, Callable<ServiceResult> {
 
 	private ComplexContent input, output;
 	private ServiceRuntime runtime;
@@ -34,8 +36,13 @@ public class ServiceRunnable implements Runnable {
 		try {
 			output = runtime.run(input);
 		}
-		catch (ServiceException e) {
-			exception = e;
+		catch (Exception e) {
+			if (e instanceof ServiceException) {
+				exception = (ServiceException) e;
+			}
+			else {
+				exception = new ServiceException("RUNNER-1", "Unexpected exception", e);
+			}
 		}
 		finally {
 			for (ServiceRunnableObserver observer : observers) {
@@ -55,5 +62,11 @@ public class ServiceRunnable implements Runnable {
 
 	public Thread getRunningThread() {
 		return runningThread;
+	}
+
+	@Override
+	public ServiceResult call() {
+		this.run();
+		return new SimpleServiceResult(output, exception);
 	}
 }
