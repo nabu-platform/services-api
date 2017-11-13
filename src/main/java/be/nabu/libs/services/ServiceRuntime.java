@@ -3,6 +3,7 @@ package be.nabu.libs.services;
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,6 +49,7 @@ public class ServiceRuntime {
 	
 	private WeakHashMap<ComplexType, List<ParsedPath>> closeables = new WeakHashMap<ComplexType, List<ParsedPath>>();
 	private static ThreadLocal<ServiceRuntime> runtime = new ThreadLocal<ServiceRuntime>();
+	private static List<ServiceRuntime> running = Collections.synchronizedList(new ArrayList<ServiceRuntime>());
 	
 	// allows for a context that can exist cross root service runtime and is managed externally by some component
 	private static ThreadLocal<Map<String, Object>> globalContext = new ThreadLocal<Map<String, Object>>();
@@ -111,8 +113,9 @@ public class ServiceRuntime {
 			parent.child = this;
 		}
 		runtime.set(this);
-
 		try {
+			running.add(this);
+
 			ServiceAuthorizer authorizer = executionContext.getServiceContext().getServiceAuthorizerProvider().getAuthorizer(this);
 			if (authorizer != null && !authorizer.canRun(this, input)) {
 				throw new ServiceException(executionContext.getSecurityContext().getToken() == null ? NO_AUTHENTICATION : NO_AUTHORIZATION, "Unauthorized");
@@ -222,6 +225,7 @@ public class ServiceRuntime {
 					parent.child = null;
 					runtime.set(parent);
 					parent = null;
+					running.remove(this);
 				}
 			}
 			else {
@@ -231,9 +235,14 @@ public class ServiceRuntime {
 				finally {
 					// remove this runtime from the thread local
 					runtime.remove();
+					running.remove(this);
 				}
 			}
 		}
+	}
+	
+	public static Collection<ServiceRuntime> getRunning() {
+		return new ArrayList<ServiceRuntime>(running);
 	}
 
 	public void closeAllTransactions() {
