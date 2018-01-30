@@ -249,7 +249,8 @@ public class ServiceRuntime {
 		// if there is no parent left, finish all the open transactions
 		for (String transactionId : getExecutionContext().getTransactionContext()) {
 			try {
-				if (exception == null) {
+				// if we abort a service, we also roll it back as we may have stopped mid-something important
+				if (exception == null && !isAborted()) {
 					getExecutionContext().getTransactionContext().commit(transactionId);
 				}
 				else {
@@ -371,11 +372,19 @@ public class ServiceRuntime {
 	}
 
 	public Map<String, Object> getContext() {
+		return getContext(false);
+	}
+	
+	public Map<String, Object> getContext(boolean inheritRunning) {
 		if (context == null) {
 			context = getGlobalContext();
 			if (context == null) {
 				if (parent != null) {
 					return parent.getContext();
+				}
+				// sometimes you want to access the current runtime context before it is run (and chained up to the parent)
+				else if (inheritRunning && getRuntime() != null) {
+					return getRuntime().getContext();
 				}
 				else {
 					context = new HashMap<String, Object>();

@@ -27,7 +27,9 @@ public class SimpleTransactionContext implements TransactionContext {
 		}
 		if (transactions.containsKey(transactionId)) {
 			Exception lastException = null;
-			for (Transactionable transactionable : transactions.get(transactionId)) {
+			// this avoids concurrent modification exception if new stuff is added while we close stuff
+			while (transactions.get(transactionId).size() > 0) {
+				Transactionable transactionable = transactions.get(transactionId).remove(0);
 				try {
 					transactionable.commit();
 				}
@@ -54,7 +56,8 @@ public class SimpleTransactionContext implements TransactionContext {
 		}
 		if (transactions.containsKey(transactionId)) {
 			Exception lastException = null;
-			for (Transactionable transactionable : transactions.get(transactionId)) {
+			while (transactions.get(transactionId).size() > 0) {
+				Transactionable transactionable = transactions.get(transactionId).remove(0);
 				try {
 					transactionable.rollback();
 				}
@@ -111,6 +114,17 @@ public class SimpleTransactionContext implements TransactionContext {
 			transactionId = "default";
 		}
 		return transactions.get(transactionId);
+	}
+
+	@Override
+	public void push(String transactionId, Transactionable transactionable) {
+		if (transactionId == null) {
+			transactionId = "default";
+		}
+		if (!transactions.containsKey(transactionId)) {
+			transactions.put(transactionId, new ArrayList<Transactionable>());
+		}
+		transactions.get(transactionId).add(0, transactionable);
 	}
 }
 
