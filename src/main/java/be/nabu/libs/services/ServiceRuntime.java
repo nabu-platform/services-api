@@ -4,10 +4,12 @@ import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.WeakHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,6 +64,10 @@ public class ServiceRuntime {
 	private boolean aborted;
 	private ServiceException exception;
 	private Boolean allowCaching;
+	private static AtomicLong idGenerator = new AtomicLong();
+	private Date started, stopped;
+	
+	private long id;
 	
 	/**
 	 * By default any closeable returned by a service invoke will be autoclosed at the end of the root service
@@ -90,6 +96,7 @@ public class ServiceRuntime {
 	public ServiceRuntime(Service service, ExecutionContext executionContext) {
 		this.service = service;
 		this.executionContext = executionContext;
+		this.id = idGenerator.getAndIncrement();
 	}
 	
 	public ExecutionContext getExecutionContext() {
@@ -97,6 +104,7 @@ public class ServiceRuntime {
 	}
 
 	public ComplexContent run(ComplexContent input) throws ServiceException {
+		started = new Date();
 		if (runtime.get() != null) {
 			parent = runtime.get();
 			if (parent != null) {
@@ -222,6 +230,7 @@ public class ServiceRuntime {
 					}
 				}
 				finally {
+					stopped = new Date();
 					parent.child = null;
 					runtime.set(parent);
 					parent = null;
@@ -233,6 +242,7 @@ public class ServiceRuntime {
 					closeAllTransactions();
 				}
 				finally {
+					stopped = new Date();
 					// remove this runtime from the thread local
 					runtime.remove();
 					running.remove(this);
@@ -469,5 +479,17 @@ public class ServiceRuntime {
 		if (parent != null && equals(parent.child)) {
 			parent.child = null;
 		}
+	}
+
+	public long getId() {
+		return id;
+	}
+
+	public Date getStarted() {
+		return started;
+	}
+
+	public Date getStopped() {
+		return stopped;
 	}
 }
