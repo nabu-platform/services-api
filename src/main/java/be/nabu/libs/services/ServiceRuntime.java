@@ -35,6 +35,7 @@ import be.nabu.libs.types.api.ComplexContent;
 import be.nabu.libs.types.api.ComplexType;
 import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.api.SimpleType;
+import be.nabu.libs.types.java.BeanType;
 
 public class ServiceRuntime {
 
@@ -354,6 +355,9 @@ public class ServiceRuntime {
 			if (element.getType() instanceof SimpleType && Closeable.class.isAssignableFrom(((SimpleType<?>) element.getType()).getInstanceClass())) {
 				paths.add(childPath);
 			}
+			else if (element.getType() instanceof BeanType && Closeable.class.isAssignableFrom(((BeanType<?>) element.getType()).getBeanClass())) {
+				paths.add(childPath);
+			}
 			else if (element.getType() instanceof ComplexType && !blackListed.contains(element.getType())) {
 				blackListed.add((ComplexType) element.getType());
 				getCloseablePaths((ComplexType) element.getType(), childPath, paths, blackListed);
@@ -385,6 +389,10 @@ public class ServiceRuntime {
 		return getContext(false);
 	}
 	
+	public void setContext(Map<String, Object> context) {
+		this.context = context;
+	}
+
 	public Map<String, Object> getContext(boolean inheritRunning) {
 		if (context == null) {
 			context = getGlobalContext();

@@ -48,6 +48,10 @@
 			<artifactId>types-api</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>be.nabu.libs.types</groupId>
+			<artifactId>types-java</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>org.slf4j</groupId>
 			<artifactId>slf4j-api</artifactId>
 		</dependency>
