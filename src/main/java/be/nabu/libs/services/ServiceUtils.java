@@ -49,6 +49,10 @@ public class ServiceUtils {
 	}
 	
 	public static String getServiceContext(ServiceRuntime runtime) {
+		return getServiceContext(runtime, true);
+	}
+	
+	public static String getServiceContext(ServiceRuntime runtime, boolean fail) {
 		String context = (String) runtime.getContext().get("service.context");
 		if (context != null) {
 			return context;
@@ -60,7 +64,7 @@ public class ServiceUtils {
 			}
 			runtime = runtime.getParent();
 		}
-		if (context == null) {
+		if (context == null && fail) {
 			throw new IllegalStateException("No service context found");
 		}
 		return context;
