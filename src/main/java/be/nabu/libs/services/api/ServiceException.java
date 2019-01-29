@@ -7,7 +7,9 @@ import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
 
+import be.nabu.libs.authentication.api.Token;
 import be.nabu.libs.services.ServiceRuntime;
+import be.nabu.libs.validator.api.Validation;
 
 public class ServiceException extends Exception {
 
@@ -15,15 +17,22 @@ public class ServiceException extends Exception {
 	
 	private Object [] arguments;
 	
-	private String code;
+	private String code, description;
 	
 	public String bundleName = "exceptions";
 	
 	private List<String> serviceStack = new ArrayList<String>();
 	
+	private List<? extends Validation<?>> validations;
+	
+	private Token token;
+	
 	private void calculateServiceStack() {
 		ServiceRuntime runtime = ServiceRuntime.getRuntime();
 		while (runtime != null) {
+			if (token == null) {
+				token = runtime.getExecutionContext().getSecurityContext().getToken();
+			}
 			if (runtime.getService() instanceof DefinedService) {
 				serviceStack.add(((DefinedService) runtime.getService()).getId());
 			}
@@ -86,5 +95,29 @@ public class ServiceException extends Exception {
 	public String getCode() {
 		return code == null ? "SYSTEM-0" : code;
 	}
-	
+
+	public String getDescription() {
+		return description;
+	}
+
+	public void setDescription(String description) {
+		this.description = description;
+	}
+
+	public Token getToken() {
+		return token;
+	}
+
+	public void setToken(Token token) {
+		this.token = token;
+	}
+
+	public List<? extends Validation<?>> getValidations() {
+		return validations;
+	}
+
+	public void setValidations(List<? extends Validation<?>> validations) {
+		this.validations = validations;
+	}
+
 }
