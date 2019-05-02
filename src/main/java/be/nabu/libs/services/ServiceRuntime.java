@@ -14,6 +14,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import be.nabu.libs.authentication.api.Device;
+import be.nabu.libs.authentication.api.Token;
+import be.nabu.libs.authentication.api.principals.DevicePrincipal;
 import be.nabu.libs.cache.api.Cache;
 import be.nabu.libs.cache.api.CacheProvider;
 import be.nabu.libs.metrics.api.MetricInstance;
@@ -36,6 +39,9 @@ import be.nabu.libs.types.api.ComplexType;
 import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.api.SimpleType;
 import be.nabu.libs.types.java.BeanType;
+import be.nabu.utils.cep.api.EventSeverity;
+import be.nabu.utils.cep.impl.CEPUtils;
+import be.nabu.utils.cep.impl.ComplexEventImpl;
 
 public class ServiceRuntime {
 
@@ -56,6 +62,10 @@ public class ServiceRuntime {
 	
 	// allows for a context that can exist cross root service runtime and is managed externally by some component
 	private static ThreadLocal<Map<String, Object>> globalContext = new ThreadLocal<Map<String, Object>>();
+	
+	// here we can set externally managed state that does not impact the running services but can be used to share properties that are relevant
+	private static Map<String, Object> serverContext = new HashMap<String, Object>();
+	
 	private ServiceRuntime parent, child;
 	private Map<String, Object> context;
 	private ExecutionContext executionContext;
@@ -105,6 +115,28 @@ public class ServiceRuntime {
 	}
 
 	public ComplexContent run(ComplexContent input) throws ServiceException {
+		ComplexEventImpl event = null;
+		if (getExecutionContext().getEventTarget() != null) {
+			event = new ComplexEventImpl();
+			event.setCreated(new Date());
+			if (service instanceof DefinedService) {
+				event.setArtifactId(((DefinedService) service).getId());
+			}
+			Token token = executionContext.getSecurityContext().getToken();
+			if (token != null) {
+				event.setAlias(token.getName());
+				event.setRealm(token.getRealm());
+				if (token instanceof DevicePrincipal) {
+					Device device = ((DevicePrincipal) token).getDevice();
+					if (device != null) {
+						event.setDeviceId(device.getDeviceId());
+					}
+				}
+			}
+			event.setEventCategory("service");
+			event.setEventName("service-execute");
+			event.setSeverity(EventSeverity.INFO);
+		}
 		started = new Date();
 		if (runtime.get() != null) {
 			parent = runtime.get();
@@ -211,6 +243,16 @@ public class ServiceRuntime {
 			if (runtimeTracker != null) {
 				runtimeTracker.error(service, e);
 			}
+			if (event != null) {
+				CEPUtils.enrich(event, e);
+				event.setContext(e.getServiceStack().toString());
+				event.setCode(e.getCode());
+				event.setReason(e.getDescription());
+				if (e.getToken() != null) {
+					event.setAlias(e.getToken().getName());
+					event.setRealm(e.getToken().getRealm());
+				}
+			}
 			throw e;
 		}
 		catch (Exception e) {
@@ -218,9 +260,17 @@ public class ServiceRuntime {
 			if (runtimeTracker != null) {
 				runtimeTracker.error(service, e);
 			}
+			if (event != null) {
+				CEPUtils.enrich(event, e);
+			}
 			throw exception;
 		}
 		finally {
+			if (event != null) {
+				event.setStarted(started);
+				event.setStopped(new Date());
+				executionContext.getEventTarget().fire(event, this);
+			}
 			if (parent != null) {
 				// if the parent does not have the same execution context, we assume that the current context needs to be cleaned up
 				// TODO: an alternative implementation (if needed) could be added where the transactions of this context are passed to the parent for management
