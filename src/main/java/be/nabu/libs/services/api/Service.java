@@ -5,6 +5,9 @@ import java.util.Set;
 public interface Service {
 	public ServiceInterface getServiceInterface();
 	public ServiceInstance newInstance();
+	public default String getDescription() {
+		return null;
+	}
 	
 	/**
 	 * This should return a list of reference ids
