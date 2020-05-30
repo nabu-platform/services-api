@@ -68,4 +68,9 @@ public class ServiceRunnable implements Runnable, Callable<ServiceResult> {
 		this.run();
 		return new SimpleServiceResult(output, exception);
 	}
+
+	public ServiceRuntime getRuntime() {
+		return runtime;
+	}
+	
 }

@@ -57,6 +57,12 @@ public class ServiceUtils {
 		if (context != null) {
 			return context;
 		}
+		if (ServiceRuntime.getGlobalContext() != null) {
+			context = (String) ServiceRuntime.getGlobalContext().get("service.context");
+		}
+		if (context != null) {
+			return context;
+		}
 		while (runtime != null) {
 			Service service = unwrap(runtime.getService());
 			if (service instanceof DefinedService && !((DefinedService) service).getId().startsWith("$self")) {

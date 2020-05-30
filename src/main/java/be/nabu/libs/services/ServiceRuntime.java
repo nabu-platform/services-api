@@ -60,6 +60,10 @@ public class ServiceRuntime {
 	private static ThreadLocal<ServiceRuntime> runtime = new ThreadLocal<ServiceRuntime>();
 	private static List<ServiceRuntime> running = Collections.synchronizedList(new ArrayList<ServiceRuntime>());
 	
+	// you can force an execution to bypass any cached value and update the cached value if it applies
+	// this allows for very specific cache resets.
+	private boolean recache;
+	
 	// allows for a context that can exist cross root service runtime and is managed externally by some component
 	private static ThreadLocal<Map<String, Object>> globalContext = new ThreadLocal<Map<String, Object>>();
 	
@@ -177,7 +181,7 @@ public class ServiceRuntime {
 			}
 			output = null;
 			List<ParsedPath> closeables = manageCloseables != null && manageCloseables ? getCloseablePaths(service.getServiceInterface().getOutputDefinition()) : null;
-			if ((closeables == null || closeables.isEmpty()) && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
+			if (!recache && (closeables == null || closeables.isEmpty()) && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
 				Cache serviceCache = getCache().get(((DefinedService) service).getId());
 				if (serviceCache != null) {
 					MetricTimer timer = metrics == null ? null : metrics.start(METRIC_CACHE_RETRIEVE);
@@ -553,4 +557,13 @@ public class ServiceRuntime {
 	public Date getStopped() {
 		return stopped;
 	}
+
+	public boolean isRecache() {
+		return recache;
+	}
+
+	public void setRecache(boolean recache) {
+		this.recache = recache;
+	}
+	
 }
