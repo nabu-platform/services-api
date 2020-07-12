@@ -4,6 +4,9 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.Callable;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
 import be.nabu.libs.services.api.ServiceException;
 import be.nabu.libs.services.api.ServiceResult;
 import be.nabu.libs.services.api.ServiceRunnableObserver;
@@ -19,6 +22,7 @@ public class ServiceRunnable implements Runnable, Callable<ServiceResult> {
 	private Thread runningThread;
 	private ServiceException exception;
 	private List<ServiceRunnableObserver> observers;
+	private Logger logger = LoggerFactory.getLogger(getClass());
 
 	public ServiceRunnable(ServiceRuntime runtime, ComplexContent input, ServiceRunnableObserver...observers) {
 		this.runtime = runtime;
@@ -30,7 +34,12 @@ public class ServiceRunnable implements Runnable, Callable<ServiceResult> {
 	public void run() {
 		runningThread = Thread.currentThread();
 		for (ServiceRunnableObserver observer : observers) {
-			observer.start(this);
+			try {
+				observer.start(this);
+			}
+			catch (Exception e) {
+				logger.warn("Could not start observer", e);
+			}
 		}
 		try {
 			output = runtime.run(input);
@@ -45,7 +54,12 @@ public class ServiceRunnable implements Runnable, Callable<ServiceResult> {
 		}
 		finally {
 			for (ServiceRunnableObserver observer : observers) {
-				observer.stop(this);
+				try {
+					observer.stop(this);
+				}
+				catch (Exception e) {
+					logger.warn("Could not start observer", e);
+				}
 			}
 			runningThread = null;
 		}

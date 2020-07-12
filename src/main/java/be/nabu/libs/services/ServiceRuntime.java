@@ -8,6 +8,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -55,6 +56,7 @@ public class ServiceRuntime {
 	public static final String DEFAULT_CACHE_TIMEOUT = "be.nabu.services.cacheTimeout";
 	public static final String NO_AUTHENTICATION = "AUTHORIZATION-0";
 	public static final String NO_AUTHORIZATION = "AUTHORIZATION-1";
+	private String correlationId;
 	
 	private WeakHashMap<ComplexType, List<ParsedPath>> closeables = new WeakHashMap<ComplexType, List<ParsedPath>>();
 	private static ThreadLocal<ServiceRuntime> runtime = new ThreadLocal<ServiceRuntime>();
@@ -63,6 +65,9 @@ public class ServiceRuntime {
 	// you can force an execution to bypass any cached value and update the cached value if it applies
 	// this allows for very specific cache resets.
 	private boolean recache;
+	
+	// whether or not a cached result was used
+	private Boolean cachedResult;
 	
 	// allows for a context that can exist cross root service runtime and is managed externally by some component
 	private static ThreadLocal<Map<String, Object>> globalContext = new ThreadLocal<Map<String, Object>>();
@@ -98,6 +103,10 @@ public class ServiceRuntime {
 	 * Toggle this to close even root streams, this may have strange behavior to external components that use services though (e.g. web artifacts, rest services,...)
 	 */
 	private Boolean allowRootCloseables = true;
+	/**
+	 * Total auditing overhead
+	 */
+	private long auditingOverhead = 0;
 
 	private ServiceInstance serviceInstance;
 	private ComplexContent input;
@@ -177,11 +186,13 @@ public class ServiceRuntime {
 			MetricInstance metrics = service instanceof DefinedService ? executionContext.getMetricInstance(((DefinedService) service).getId()) : null;
 			
 			if (runtimeTracker != null) {
+				Date auditStart = new Date();
 				runtimeTracker.start(service);
+				addOverhead(auditStart);
 			}
 			output = null;
 			List<ParsedPath> closeables = manageCloseables != null && manageCloseables ? getCloseablePaths(service.getServiceInterface().getOutputDefinition()) : null;
-			if (!recache && (closeables == null || closeables.isEmpty()) && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
+			if (!isRecache() && (closeables == null || closeables.isEmpty()) && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
 				Cache serviceCache = getCache().get(((DefinedService) service).getId());
 				if (serviceCache != null) {
 					MetricTimer timer = metrics == null ? null : metrics.start(METRIC_CACHE_RETRIEVE);
@@ -199,6 +210,7 @@ public class ServiceRuntime {
 				serviceInstance = service.newInstance();
 				MetricTimer timer = metrics == null ? null : metrics.start(METRIC_EXECUTION_TIME);
 				output = serviceInstance.execute(getExecutionContext(), input);
+				cachedResult = false;
 				if (timer != null) {
 					timer.stop();
 				}
@@ -215,6 +227,9 @@ public class ServiceRuntime {
 						}
 					}
 				}
+			}
+			else {
+				cachedResult = true;
 			}
 			// check if we have closeables
 			if (output != null && closeables != null && !closeables.isEmpty()) {
@@ -241,14 +256,18 @@ public class ServiceRuntime {
 				}
 			}
 			if (runtimeTracker != null) {
+				Date auditStart = new Date();
 				runtimeTracker.stop(service);
+				addOverhead(auditStart);
 			}
 			return output;
 		}
 		catch (ServiceException e) {
 			exception = e;
 			if (runtimeTracker != null) {
+				Date auditStart = new Date();
 				runtimeTracker.error(service, e);
+				addOverhead(auditStart);
 			}
 			if (event != null) {
 				CEPUtils.enrich(event, e);
@@ -265,7 +284,9 @@ public class ServiceRuntime {
 		catch (Exception e) {
 			exception = new ServiceException(e);
 			if (runtimeTracker != null) {
+				Date auditStart = new Date();
 				runtimeTracker.error(service, e);
+				addOverhead(auditStart);
 			}
 			if (event != null) {
 				CEPUtils.enrich(event, e);
@@ -309,6 +330,14 @@ public class ServiceRuntime {
 		}
 	}
 	
+	private void addOverhead(Date auditStart) {
+		long overhead = new Date().getTime() - auditStart.getTime();
+		auditingOverhead += overhead;
+		if (getParent() != null) {
+			getParent().incrementAuditingOverhead(overhead);
+		}
+	}
+
 	public static Collection<ServiceRuntime> getRunning() {
 		return new ArrayList<ServiceRuntime>(running);
 	}
@@ -333,6 +362,15 @@ public class ServiceRuntime {
 //				}
 			}
 		}
+//		if (auditingOverhead > 0) {
+//			Date stopped = new Date();
+//			long total = stopped.getTime() - started.getTime();
+//			// for really short services, this is misleading
+//			if (total >= 25) {
+//				String serviceId = service instanceof DefinedService ? ((DefinedService) service).getId() : "$anonymous";
+//				logger.warn("Audit overhead for '" + serviceId + "' is: " + auditingOverhead + " vs " + (stopped.getTime() - started.getTime()) + " runtime or " + (((1.0*auditingOverhead) / (stopped.getTime() - started.getTime())) * 100) + "%");
+//			}
+//		}
 	}
 	
 	private List<Closeable> getCloseables(ComplexContent content, List<ParsedPath> paths) {
@@ -558,12 +596,51 @@ public class ServiceRuntime {
 		return stopped;
 	}
 
+	// recaching is currently recursive, the usecase for resetting a top layer cache without resetting a bottom layer one is tiny
+	// if this ever becomes an issue, we add a boolean to alter this behavior
 	public boolean isRecache() {
-		return recache;
+		return recache || (getParent() != null && getParent().isRecache());
 	}
 
 	public void setRecache(boolean recache) {
 		this.recache = recache;
+	}
+
+	public String getCorrelationId() {
+		if (correlationId != null) {
+			return correlationId;
+		}
+		else if (getParent() != null) {
+			return getParent().getCorrelationId();
+		}
+		else {
+			synchronized(this) {
+				if (correlationId == null) {
+					correlationId = UUID.randomUUID().toString().replace("-", "");
+				}
+			}
+			return correlationId;
+		}
+	}
+
+	public void setCorrelationId(String correlationId) {
+		this.correlationId = correlationId;
+	}
+
+	public Boolean getCachedResult() {
+		return cachedResult;
+	}
+
+	public void setCachedResult(Boolean cachedResult) {
+		this.cachedResult = cachedResult;
+	}
+
+	public long getAuditingOverhead() {
+		return auditingOverhead;
+	}
+
+	void incrementAuditingOverhead(long auditingOverhead) {
+		this.auditingOverhead += auditingOverhead;
 	}
 	
 }

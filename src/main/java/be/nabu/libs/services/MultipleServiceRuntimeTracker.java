@@ -81,4 +81,14 @@ public class MultipleServiceRuntimeTracker implements ServiceRuntimeTracker {
 			}
 		}
 	}
+
+	@Override
+	public void describe(Object object) {
+		for (ServiceRuntimeTracker tracker : trackers) {
+			if (tracker != null) {
+				tracker.describe(object);
+			}
+		}
+	}
+	
 }
