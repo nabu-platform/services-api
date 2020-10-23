@@ -274,9 +274,16 @@ public class ServiceRuntime {
 				event.setContext(e.getServiceStack().toString());
 				event.setCode(e.getCode());
 				event.setReason(e.getDescription());
+				event.setLocalId(e.getId());
 				if (e.getToken() != null) {
 					event.setAlias(e.getToken().getName());
 					event.setRealm(e.getToken().getRealm());
+				}
+				if (e.isReported()) {
+					event.setSeverity(EventSeverity.WARNING);
+				}
+				else {
+					e.setReported(true);
 				}
 			}
 			throw e;
@@ -290,6 +297,7 @@ public class ServiceRuntime {
 			}
 			if (event != null) {
 				CEPUtils.enrich(event, e);
+				event.setLocalId(exception.getId());
 			}
 			throw exception;
 		}

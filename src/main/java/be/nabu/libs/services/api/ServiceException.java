@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.MissingResourceException;
 import java.util.ResourceBundle;
+import java.util.UUID;
 
 import be.nabu.libs.authentication.api.Token;
 import be.nabu.libs.services.ServiceRuntime;
@@ -26,6 +27,11 @@ public class ServiceException extends Exception {
 	private List<? extends Validation<?>> validations;
 	
 	private Token token;
+	
+	private String id;
+	
+	// whether or not this exception has been reported already
+	private boolean reported;
 	
 	private void calculateServiceStack() {
 		ServiceRuntime runtime = ServiceRuntime.getRuntime();
@@ -118,6 +124,25 @@ public class ServiceException extends Exception {
 
 	public void setValidations(List<? extends Validation<?>> validations) {
 		this.validations = validations;
+	}
+
+	public boolean isReported() {
+		return reported;
+	}
+
+	public void setReported(boolean reported) {
+		this.reported = reported;
+	}
+
+	public String getId() {
+		if (id == null) {
+			id = UUID.randomUUID().toString().replace("-", "");
+		}
+		return id;
+	}
+
+	public void setId(String id) {
+		this.id = id;
 	}
 
 }
