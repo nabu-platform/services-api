@@ -15,6 +15,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import be.nabu.libs.artifacts.api.ExternalDependency;
+import be.nabu.libs.artifacts.api.ExternalDependencyArtifact;
 import be.nabu.libs.authentication.api.Device;
 import be.nabu.libs.authentication.api.Token;
 import be.nabu.libs.authentication.api.principals.DevicePrincipal;
@@ -57,6 +59,8 @@ public class ServiceRuntime {
 	public static final String NO_AUTHENTICATION = "AUTHORIZATION-0";
 	public static final String NO_AUTHORIZATION = "AUTHORIZATION-1";
 	private String correlationId;
+	
+	private Long durationThreshold = Long.parseLong(System.getProperty("service.duration.threshold", "100"));
 	
 	private WeakHashMap<ComplexType, List<ParsedPath>> closeables = new WeakHashMap<ComplexType, List<ParsedPath>>();
 	private static ThreadLocal<ServiceRuntime> runtime = new ThreadLocal<ServiceRuntime>();
@@ -148,6 +152,7 @@ public class ServiceRuntime {
 			}
 			event.setEventCategory("service");
 			event.setEventName("service-execute");
+			event.setCorrelationId(getCorrelationId());
 			// we don't want these events at the info level
 			// in a lot of cases, handling the events requires more service executions and if we log all that by default, we get infinite loops...?
 			// also: TMI, we got metrics by default
@@ -305,6 +310,89 @@ public class ServiceRuntime {
 			if (event != null) {
 				event.setStarted(started);
 				event.setStopped(new Date());
+				
+				// if it's a debug event, upgrade it to INFO in certain conditions that we want to track
+				if (event.getSeverity() == EventSeverity.DEBUG) {
+					// the performance tracker was ignoring glue and startup based methods? especially startup (long running) can create many unnecessary logs, glue generates lots of "root" services as well...
+					Object serviceSource = getContext().get("service.source");
+
+					if (serviceSource != null) {
+						event.setOrigin(serviceSource.toString());
+					}
+					
+					// some system-based things are only upgraded if necessary
+					boolean partialUpgrade = false;
+					Token token = executionContext.getSecurityContext().getToken();
+					// we want to ignore system token actions, these are usually automated actions
+					if (token != null && token.getRealm().equals("$system")) {
+						partialUpgrade = true;
+					}
+					if (serviceSource != null && (serviceSource.equals("startup") || serviceSource.equals("glue"))) {
+						partialUpgrade = true;
+					}
+					// hardcoded exception for sleep.......not ideal :|
+					if (service instanceof DefinedService && ((DefinedService) service).getId().equals("nabu.utils.Server.sleep")) {
+						partialUpgrade = true;
+					}
+					
+					boolean upgrade = false;
+					
+					// if we hit a cache, upgrade it
+					if (cachedResult != null && cachedResult) {
+						upgrade = true;
+						event.setCode("CACHE-HIT");
+					}
+					// if it took longer than the configured threshold, log it
+					if (!upgrade && !partialUpgrade && event.getStopped().getTime() - event.getStarted().getTime() > durationThreshold) {
+						upgrade = true;
+						event.setCode("THRESHOLD-REACHED");
+					}
+					// all root services that are not subjected to partial upgrade rules
+					if (!partialUpgrade && !upgrade && parent == null) {
+						upgrade = true;
+						event.setCode("ROOT-SERVICE");
+					}
+					// if we have external dependencies, log it
+					if (!upgrade && service instanceof ExternalDependencyArtifact && ((ExternalDependencyArtifact) service).getExternalDependencies() != null && !((ExternalDependencyArtifact) service).getExternalDependencies().isEmpty()) {
+						upgrade = true;
+						event.setCode("EXTERNAL-DEPENDENCY");
+					}
+					// always set the external dependency (if any)
+					if (service instanceof ExternalDependencyArtifact && ((ExternalDependencyArtifact) service).getExternalDependencies() != null && !((ExternalDependencyArtifact) service).getExternalDependencies().isEmpty()) {
+						for (ExternalDependency externalDependency : ((ExternalDependencyArtifact) service).getExternalDependencies()) {
+							if (externalDependency.getEndpoint() != null) {
+								event.setExternalDependency(externalDependency.getEndpoint().getHost());
+							}
+							else if (externalDependency.getGroup() != null) {
+								event.setExternalDependency(externalDependency.getGroup());
+							}
+							else if (externalDependency.getId() != null) {
+								event.setExternalDependency(externalDependency.getId());
+							}
+							else if (externalDependency.getArtifactId() != null) {
+								event.setExternalDependency(externalDependency.getArtifactId());
+							}
+							break;
+						}
+					}
+					// we upgrade it to INFO level
+					if (upgrade) {
+						// we set the service context as well
+						if (parent != null) {
+							List<String> context = new ArrayList<String>();
+							ServiceRuntime check = parent;
+							while (check != null) {
+								if (check.getService() instanceof DefinedService) {
+									context.add(((DefinedService) check.getService()).getId());
+								}
+								check = check.getParent();
+							}
+							event.setContext(context.toString());
+						}
+						event.setSeverity(EventSeverity.INFO);
+					}
+				}
+				
 				executionContext.getEventTarget().fire(event, this);
 			}
 			if (parent != null) {
