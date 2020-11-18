@@ -8,5 +8,9 @@ import java.lang.annotation.Target;
 @Retention(RetentionPolicy.RUNTIME)
 @Target(ElementType.METHOD)
 public @interface ServiceDescription {
-	public String description();
+	public String name() default "";
+	public String namespace() default "";
+	public String description() default "";
+	public String comment() default "";
+	public String summary() default "";
 }

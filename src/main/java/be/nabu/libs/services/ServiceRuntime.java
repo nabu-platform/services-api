@@ -30,8 +30,11 @@ import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.api.ServiceAuthorizer;
 import be.nabu.libs.services.api.ServiceException;
 import be.nabu.libs.services.api.ServiceInstance;
+import be.nabu.libs.services.api.ServiceLevelAgreement;
+import be.nabu.libs.services.api.ServiceLevelAgreementProvider;
 import be.nabu.libs.services.api.ServiceRuntimeTracker;
 import be.nabu.libs.services.api.Transactionable;
+import be.nabu.libs.services.impl.ServiceComplexEvent;
 import be.nabu.libs.types.CollectionHandlerFactory;
 import be.nabu.libs.types.ComplexContentWrapperFactory;
 import be.nabu.libs.types.ParsedPath;
@@ -44,10 +47,10 @@ import be.nabu.libs.types.api.SimpleType;
 import be.nabu.libs.types.java.BeanType;
 import be.nabu.utils.cep.api.EventSeverity;
 import be.nabu.utils.cep.impl.CEPUtils;
-import be.nabu.utils.cep.impl.ComplexEventImpl;
 
 public class ServiceRuntime {
 
+	private static Boolean UPGRADE_CACHE_HITS = Boolean.parseBoolean(System.getProperty("service.event.upgradeCacheHits", "false"));
 	public static final String METRIC_CACHE_RETRIEVE = "cacheRetrieve";
 	public static final String METRIC_CACHE_STORE = "cacheStore";
 	public static final String METRIC_CACHE_HIT = "cacheHit";
@@ -59,8 +62,6 @@ public class ServiceRuntime {
 	public static final String NO_AUTHENTICATION = "AUTHORIZATION-0";
 	public static final String NO_AUTHORIZATION = "AUTHORIZATION-1";
 	private String correlationId;
-	
-	private Long durationThreshold = Long.parseLong(System.getProperty("service.duration.threshold", "100"));
 	
 	private WeakHashMap<ComplexType, List<ParsedPath>> closeables = new WeakHashMap<ComplexType, List<ParsedPath>>();
 	private static ThreadLocal<ServiceRuntime> runtime = new ThreadLocal<ServiceRuntime>();
@@ -132,9 +133,12 @@ public class ServiceRuntime {
 	}
 
 	public ComplexContent run(ComplexContent input) throws ServiceException {
-		ComplexEventImpl event = null;
+		ServiceLevelAgreementProvider serviceLevelAgreementProvider = executionContext.getServiceContext().getServiceLevelAgreementProvider();
+		ServiceLevelAgreement sla = serviceLevelAgreementProvider == null ? null : serviceLevelAgreementProvider.getAgreementFor(service);
+		
+		ServiceComplexEvent event = null;
 		if (getExecutionContext().getEventTarget() != null) {
-			event = new ComplexEventImpl();
+			event = new ServiceComplexEvent();
 			event.setCreated(new Date());
 			if (service instanceof DefinedService) {
 				event.setArtifactId(((DefinedService) service).getId());
@@ -207,6 +211,10 @@ public class ServiceRuntime {
 					}
 					if (metrics != null) {
 						metrics.increment(output == null ? METRIC_CACHE_MISS : METRIC_CACHE_HIT, 1);
+					}
+					if (event != null) {
+						// we have a cache but we had either a hit or a miss
+						event.setCached(output != null);
 					}
 				}
 			}
@@ -336,16 +344,27 @@ public class ServiceRuntime {
 					}
 					
 					boolean upgrade = false;
-					
-					// if we hit a cache, upgrade it
-					if (cachedResult != null && cachedResult) {
+
+					EventSeverity upgradeSeverity = EventSeverity.INFO;
+					// we always upgrade services with an SLA
+					if (sla != null) {
 						upgrade = true;
-						event.setCode("CACHE-HIT");
+						Long thresholdDuration = sla.getThresholdDuration();
+						// if we surpassed the threshold, log it
+						if (thresholdDuration != null && event.getStopped().getTime() - event.getStarted().getTime() > thresholdDuration) {
+							event.setCode("SLA-THRESHOLD-REACHED");	
+							event.setThreshold(thresholdDuration);
+							upgradeSeverity = EventSeverity.WARNING;
+						}
+						else {
+							event.setCode("SLA-ACTIVE");
+						}
 					}
-					// if it took longer than the configured threshold, log it
-					if (!upgrade && !partialUpgrade && event.getStopped().getTime() - event.getStarted().getTime() > durationThreshold) {
-						upgrade = true;
-						event.setCode("THRESHOLD-REACHED");
+					// we no longer upgrade cache hits by default, this is "works as designed" and could trigger a lot of logs
+					if (!upgrade && event.getCached() != null) {
+						// we only upgrade if we have a cache miss or if we also want to upgrade cache hits
+						upgrade = !event.getCached() || UPGRADE_CACHE_HITS;
+						event.setCode("CACHE-" + (event.getCached() ? "HIT" : "MISS"));
 					}
 					// all root services that are not subjected to partial upgrade rules
 					if (!partialUpgrade && !upgrade && parent == null) {
@@ -389,7 +408,7 @@ public class ServiceRuntime {
 							}
 							event.setContext(context.toString());
 						}
-						event.setSeverity(EventSeverity.INFO);
+						event.setSeverity(upgradeSeverity);
 					}
 				}
 				

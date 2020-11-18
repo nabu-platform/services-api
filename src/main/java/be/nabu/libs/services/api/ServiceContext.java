@@ -13,4 +13,7 @@ public interface ServiceContext {
 	public default ServiceRunner getServiceRunner() {
 		return ServiceRunnerFactory.getInstance().getServiceRunner();
 	}
+	public default ServiceLevelAgreementProvider getServiceLevelAgreementProvider() {
+		return null;
+	}
 }
