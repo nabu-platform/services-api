@@ -65,6 +65,14 @@ public class ServiceException extends Exception {
 		calculateServiceStack();
 	}
 
+	public String getCoreMessage() {
+		String message = super.getMessage();
+		if (message == null) {
+			message = getLocalizedMessage();
+		}
+		return message;
+	}
+	
 	@Override
 	public String getLocalizedMessage() {
 		String message;

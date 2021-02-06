@@ -140,6 +140,14 @@ public class ServiceRuntime {
 		if (getExecutionContext().getEventTarget() != null) {
 			event = new ServiceComplexEvent();
 			event.setCreated(new Date());
+			event.setEventCategory("service");
+			event.setEventName("service-execute");
+			event.setCorrelationId(getCorrelationId());
+			// we don't want these events at the info level
+			// in a lot of cases, handling the events requires more service executions and if we log all that by default, we get infinite loops...?
+			// also: TMI, we got metrics by default
+			event.setSeverity(EventSeverity.DEBUG);
+			
 			if (service instanceof DefinedService) {
 				event.setArtifactId(((DefinedService) service).getId());
 			}
@@ -154,13 +162,6 @@ public class ServiceRuntime {
 					}
 				}
 			}
-			event.setEventCategory("service");
-			event.setEventName("service-execute");
-			event.setCorrelationId(getCorrelationId());
-			// we don't want these events at the info level
-			// in a lot of cases, handling the events requires more service executions and if we log all that by default, we get infinite loops...?
-			// also: TMI, we got metrics by default
-			event.setSeverity(EventSeverity.DEBUG);
 		}
 		started = new Date();
 		if (runtime.get() != null) {
@@ -356,6 +357,7 @@ public class ServiceRuntime {
 							event.setThreshold(thresholdDuration);
 							upgradeSeverity = EventSeverity.WARNING;
 						}
+						// we must also log "success", otherwise we can't calculate the percentage of threshold reaches!
 						else {
 							event.setCode("SLA-ACTIVE");
 						}
