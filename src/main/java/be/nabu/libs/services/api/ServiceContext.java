@@ -16,4 +16,7 @@ public interface ServiceContext {
 	public default ServiceLevelAgreementProvider getServiceLevelAgreementProvider() {
 		return null;
 	}
+	public default String getCorrelationId() {
+		return null;
+	}
 }

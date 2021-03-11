@@ -731,9 +731,15 @@ public class ServiceRuntime {
 			return getParent().getCorrelationId();
 		}
 		else {
-			synchronized(this) {
-				if (correlationId == null) {
-					correlationId = UUID.randomUUID().toString().replace("-", "");
+			// try to get it from the context
+			if (executionContext != null) {
+				correlationId = executionContext.getServiceContext().getCorrelationId();
+			}
+			if (correlationId == null) {
+				synchronized(this) {
+					if (correlationId == null) {
+						correlationId = UUID.randomUUID().toString().replace("-", "");
+					}
 				}
 			}
 			return correlationId;
