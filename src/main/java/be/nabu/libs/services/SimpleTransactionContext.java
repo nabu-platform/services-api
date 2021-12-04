@@ -14,6 +14,7 @@ import be.nabu.libs.services.api.Transactionable;
 public class SimpleTransactionContext implements TransactionContext {
 	
 	private Map<String, List<Transactionable>> transactions = new HashMap<String, List<Transactionable>>();
+	private String defaultTransactionId = "default";
 
 	@Override
 	public String start() {
@@ -23,7 +24,7 @@ public class SimpleTransactionContext implements TransactionContext {
 	@Override
 	public void commit(String transactionId) {
 		if (transactionId == null) {
-			transactionId = "default";
+			transactionId = defaultTransactionId;
 		}
 		if (transactions.containsKey(transactionId)) {
 			Exception lastException = null;
@@ -52,7 +53,7 @@ public class SimpleTransactionContext implements TransactionContext {
 	@Override
 	public void rollback(String transactionId) {
 		if (transactionId == null) {
-			transactionId = "default";
+			transactionId = defaultTransactionId;
 		}
 		if (transactions.containsKey(transactionId)) {
 			Exception lastException = null;
@@ -80,7 +81,7 @@ public class SimpleTransactionContext implements TransactionContext {
 	@Override
 	public void add(String transactionId, Transactionable transactionable) {
 		if (transactionId == null) {
-			transactionId = "default";
+			transactionId = defaultTransactionId;
 		}
 		if (!transactions.containsKey(transactionId)) {
 			transactions.put(transactionId, new ArrayList<Transactionable>());
@@ -91,7 +92,7 @@ public class SimpleTransactionContext implements TransactionContext {
 	@Override
 	public Transactionable get(String transactionId, String resourceId) {
 		if (transactionId == null) {
-			transactionId = "default";
+			transactionId = defaultTransactionId;
 		}
 		if (transactions.containsKey(transactionId)) {
 			for (Transactionable transactionable : transactions.get(transactionId)) {
@@ -111,7 +112,7 @@ public class SimpleTransactionContext implements TransactionContext {
 	@Override
 	public Collection<Transactionable> getAll(String transactionId) {
 		if (transactionId == null) {
-			transactionId = "default";
+			transactionId = defaultTransactionId;
 		}
 		return transactions.get(transactionId);
 	}
@@ -119,12 +120,23 @@ public class SimpleTransactionContext implements TransactionContext {
 	@Override
 	public void push(String transactionId, Transactionable transactionable) {
 		if (transactionId == null) {
-			transactionId = "default";
+			transactionId = defaultTransactionId;
 		}
 		if (!transactions.containsKey(transactionId)) {
 			transactions.put(transactionId, new ArrayList<Transactionable>());
 		}
 		transactions.get(transactionId).add(0, transactionable);
 	}
+
+	@Override
+	public String getDefaultTransactionId() {
+		return defaultTransactionId;
+	}
+
+	@Override
+	public void setDefaultTransactionId(String defaultTransactionId) {
+		this.defaultTransactionId = defaultTransactionId;
+	}
+	
 }
 

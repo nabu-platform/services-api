@@ -19,4 +19,7 @@ public interface TransactionContext extends Iterable<String> {
 	public void push(String transactionId, Transactionable transactionable);
 	public Transactionable get(String transactionId, String resourceId);
 	public Collection<Transactionable> getAll(String transactionId);
+	
+	public String getDefaultTransactionId();
+	public void setDefaultTransactionId(String defaultTransactionId);
 }

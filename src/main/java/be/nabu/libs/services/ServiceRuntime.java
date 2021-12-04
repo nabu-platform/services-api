@@ -155,6 +155,7 @@ public class ServiceRuntime {
 			if (token != null) {
 				event.setAlias(token.getName());
 				event.setRealm(token.getRealm());
+				event.setAuthenticationId(token.getAuthenticationId());
 				if (token instanceof DevicePrincipal) {
 					Device device = ((DevicePrincipal) token).getDevice();
 					if (device != null) {

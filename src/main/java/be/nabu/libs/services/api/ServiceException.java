@@ -10,6 +10,7 @@ import java.util.UUID;
 
 import be.nabu.libs.authentication.api.Token;
 import be.nabu.libs.services.ServiceRuntime;
+import be.nabu.libs.services.ServiceUtils;
 import be.nabu.libs.validator.api.Validation;
 
 public class ServiceException extends Exception {
@@ -41,6 +42,12 @@ public class ServiceException extends Exception {
 			}
 			if (runtime.getService() instanceof DefinedService) {
 				serviceStack.add(((DefinedService) runtime.getService()).getId());
+			}
+			else if (runtime.getService() instanceof ServiceWrapper) {
+				Service unwrap = ServiceUtils.unwrap(runtime.getService());
+				if (unwrap instanceof DefinedService) {
+					serviceStack.add(((DefinedService) unwrap).getId());	
+				}
 			}
 			runtime = runtime.getParent();
 		}
