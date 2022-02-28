@@ -51,6 +51,7 @@ import be.nabu.utils.cep.impl.CEPUtils;
 public class ServiceRuntime {
 
 	private static Boolean UPGRADE_CACHE_HITS = Boolean.parseBoolean(System.getProperty("service.event.upgradeCacheHits", "false"));
+	private static Boolean UPGRADE_CACHE_MISSES = Boolean.parseBoolean(System.getProperty("service.event.upgradeCacheMisses", "false"));
 	public static final String METRIC_CACHE_RETRIEVE = "cacheRetrieve";
 	public static final String METRIC_CACHE_STORE = "cacheStore";
 	public static final String METRIC_CACHE_HIT = "cacheHit";
@@ -363,16 +364,17 @@ public class ServiceRuntime {
 							event.setCode("SLA-ACTIVE");
 						}
 					}
-					// we no longer upgrade cache hits by default, this is "works as designed" and could trigger a lot of logs
-					if (!upgrade && event.getCached() != null) {
-						// we only upgrade if we have a cache miss or if we also want to upgrade cache hits
-						upgrade = !event.getCached() || UPGRADE_CACHE_HITS;
-						event.setCode("CACHE-" + (event.getCached() ? "HIT" : "MISS"));
-					}
 					// all root services that are not subjected to partial upgrade rules
 					if (!partialUpgrade && !upgrade && parent == null) {
 						upgrade = true;
 						event.setCode("ROOT-SERVICE");
+					}
+					// we no longer upgrade cache hits by default, this is "works as designed" and could trigger a lot of logs
+					// we only log cache misses explicitly if it is not a root service, otherwise the boolean will suffice
+					if (!upgrade && event.getCached() != null && (UPGRADE_CACHE_HITS || UPGRADE_CACHE_MISSES)) {
+						// we only upgrade if we have a cache miss or if we also want to upgrade cache hits
+						upgrade = (!event.getCached() && UPGRADE_CACHE_MISSES) || (event.getCached() && UPGRADE_CACHE_HITS);
+						event.setCode("CACHE-" + (event.getCached() ? "HIT" : "MISS"));
 					}
 					// if we have external dependencies, log it
 					if (!upgrade && service instanceof ExternalDependencyArtifact && ((ExternalDependencyArtifact) service).getExternalDependencies() != null && !((ExternalDependencyArtifact) service).getExternalDependencies().isEmpty()) {
