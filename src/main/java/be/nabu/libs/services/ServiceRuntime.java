@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
@@ -251,10 +252,21 @@ public class ServiceRuntime {
 			if (output == null) {
 				serviceInstance = service.newInstance();
 				MetricTimer timer = metrics == null ? null : metrics.start(METRIC_EXECUTION_TIME);
+				// get the current cpu time of the thread in nanoseconds
+				long cpuTime = SUPPORTS_CPU_TIME ? getCpuTime() : 0;
 				output = serviceInstance.execute(getExecutionContext(), input);
+				// and after we have run it
+				cpuTime = SUPPORTS_CPU_TIME ? getCpuTime() - cpuTime : 0;
 				cachedResult = false;
 				if (timer != null) {
 					timer.stop();
+				}
+				if (metrics != null && SUPPORTS_CPU_TIME) {
+					// all other measurements are done in ms
+					// in a typical setup, when 0ms are reported, we generally don't care about the nanoseconds
+					// if that ever becomes a necessarity, we have to revisit other places reporting in ms
+					// at that time we could add a cpuTimeNano or whatever
+					metrics.log(METRIC_CPU_TIME, (long) (cpuTime / 1000.0));
 				}
 				// store the newly calculated result in the cache if applicable
 				if ((closeables == null || closeables.isEmpty()) && output != null && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
