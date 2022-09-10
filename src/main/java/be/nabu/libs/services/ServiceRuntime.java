@@ -1,6 +1,8 @@
 package be.nabu.libs.services;
 
 import java.io.Closeable;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -50,6 +52,24 @@ import be.nabu.utils.cep.impl.CEPUtils;
 
 public class ServiceRuntime {
 
+	private static boolean SUPPORTS_CPU_TIME = false;
+	
+	static {
+		try {
+			ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
+			if (threadMXBean.isThreadCpuTimeSupported()) {
+				if (!threadMXBean.isThreadCpuTimeEnabled()) {
+					threadMXBean.setThreadCpuTimeEnabled(true);
+				}
+				SUPPORTS_CPU_TIME = true;
+			}
+		}
+		catch (Exception e) {
+			System.err.println("Can not determine whether the system supports cpu time");
+			e.printStackTrace();
+		}
+	}
+	
 	private static Boolean UPGRADE_CACHE_HITS = Boolean.parseBoolean(System.getProperty("service.event.upgradeCacheHits", "false"));
 	private static Boolean UPGRADE_CACHE_MISSES = Boolean.parseBoolean(System.getProperty("service.event.upgradeCacheMisses", "false"));
 	public static final String METRIC_CACHE_RETRIEVE = "cacheRetrieve";
@@ -58,6 +78,7 @@ public class ServiceRuntime {
 	public static final String METRIC_CACHE_MISS = "cacheMiss";
 	public static final String METRIC_CACHE_FAILURE = "cacheFailure";
 	public static final String METRIC_EXECUTION_TIME = "executionTime";
+	public static final String METRIC_CPU_TIME = "cpuTime";
 	
 	public static final String DEFAULT_CACHE_TIMEOUT = "be.nabu.services.cacheTimeout";
 	public static final String NO_AUTHENTICATION = "AUTHORIZATION-0";
@@ -92,6 +113,7 @@ public class ServiceRuntime {
 	private Boolean allowCaching;
 	private static AtomicLong idGenerator = new AtomicLong();
 	private Date started, stopped;
+	private long startCpuTime;
 	
 	private long id;
 	
@@ -118,6 +140,10 @@ public class ServiceRuntime {
 	private ComplexContent input;
 	private ComplexContent output;
 	private Logger logger = LoggerFactory.getLogger(getClass());
+	
+	private long getCpuTime() {
+		return ManagementFactory.getThreadMXBean().getThreadCpuTime(Thread.currentThread().getId());
+	}
 	
 	public static ServiceRuntime getRuntime() {
 		return runtime.get();
