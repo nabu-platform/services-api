@@ -80,6 +80,7 @@ public class ServiceRuntime {
 	public static final String METRIC_CACHE_FAILURE = "cacheFailure";
 	public static final String METRIC_EXECUTION_TIME = "executionTime";
 	public static final String METRIC_CPU_TIME = "cpuTime";
+	public static final String METRIC_AUDIT_OVERHEAD = "auditOverhead";
 	
 	public static final String DEFAULT_CACHE_TIMEOUT = "be.nabu.services.cacheTimeout";
 	public static final String NO_AUTHENTICATION = "AUTHORIZATION-0";
@@ -141,6 +142,8 @@ public class ServiceRuntime {
 	private ComplexContent input;
 	private ComplexContent output;
 	private Logger logger = LoggerFactory.getLogger(getClass());
+	// you can set one directly on the runtime
+	private ServiceLevelAgreementProvider slaProvider;
 	
 	private long getCpuTime() {
 		return ManagementFactory.getThreadMXBean().getThreadCpuTime(Thread.currentThread().getId());
@@ -161,9 +164,6 @@ public class ServiceRuntime {
 	}
 
 	public ComplexContent run(ComplexContent input) throws ServiceException {
-		ServiceLevelAgreementProvider serviceLevelAgreementProvider = executionContext.getServiceContext().getServiceLevelAgreementProvider();
-		ServiceLevelAgreement sla = serviceLevelAgreementProvider == null ? null : serviceLevelAgreementProvider.getAgreementFor(service);
-		
 		ServiceComplexEvent event = null;
 		if (getExecutionContext().getEventTarget() != null) {
 			event = new ServiceComplexEvent();
@@ -209,6 +209,9 @@ public class ServiceRuntime {
 			parent.child = this;
 		}
 		runtime.set(this);
+		
+		ServiceLevelAgreement sla = getSla();
+		MetricInstance metrics = null;
 		try {
 			running.add(this);
 
@@ -222,7 +225,7 @@ public class ServiceRuntime {
 			// the runtime tracker provider might use contextual data (e.g. the service call stack) to determine which trackers to return, so only call it after we have register this service runtime
 			this.runtimeTracker = executionContext.getServiceContext().getServiceTrackerProvider().getTracker(this);
 			this.cache = executionContext.getServiceContext().getCacheProvider();
-			MetricInstance metrics = service instanceof DefinedService ? executionContext.getMetricInstance(((DefinedService) service).getId()) : null;
+			metrics = service instanceof DefinedService ? executionContext.getMetricInstance(((DefinedService) service).getId()) : null;
 			
 			if (runtimeTracker != null) {
 				Date auditStart = new Date();
@@ -389,23 +392,28 @@ public class ServiceRuntime {
 					EventSeverity upgradeSeverity = EventSeverity.INFO;
 					// we always upgrade services with an SLA
 					if (sla != null) {
-						upgrade = true;
+						// if we have an official sla, we always want to upgrade
+						// for an unofficial sla, we only upgrade if we reach the threshold
+						upgrade = sla.isExplicit();
 						Long thresholdDuration = sla.getThresholdDuration();
+						event.setThreshold(sla.getThresholdDuration());
 						// if we surpassed the threshold, log it
 						if (thresholdDuration != null && event.getStopped().getTime() - event.getStarted().getTime() > thresholdDuration) {
-							event.setCode("SLA-THRESHOLD-REACHED");	
-							event.setThreshold(thresholdDuration);
-							upgradeSeverity = EventSeverity.WARNING;
+							// upgrade!
+							upgrade = true;
+							event.setCode("SLA-THRESHOLD-EXCEEDED");	
+							upgradeSeverity = sla.getSeverity(); // EventSeverity.WARNING
 						}
-						// we must also log "success", otherwise we can't calculate the percentage of threshold reaches!
-						else {
-							event.setCode("SLA-ACTIVE");
+						// we must also log "success", otherwise we can't calculate the percentage of threshold breaches!
+						else if (sla.isExplicit()) {
+							event.setCode("SLA-THRESHOLD-MAINTAINED");
 						}
 					}
 					// all root services that are not subjected to partial upgrade rules
-					if (!partialUpgrade && !upgrade && parent == null) {
+					if (!partialUpgrade && parent == null) {
 						upgrade = true;
-						event.setCode("ROOT-SERVICE");
+//						event.setCode("ROOT-SERVICE");
+						event.setEventName("service-execute-root");
 					}
 					// we no longer upgrade cache hits by default, this is "works as designed" and could trigger a lot of logs
 					// we only log cache misses explicitly if it is not a root service, otherwise the boolean will suffice
@@ -475,6 +483,12 @@ public class ServiceRuntime {
 				}
 			}
 			else {
+				// if we had any auditing overhead, log it in metrics
+				if (auditingOverhead > 0) {
+					if (metrics != null) {
+						metrics.duration(METRIC_AUDIT_OVERHEAD, auditingOverhead, TimeUnit.MILLISECONDS);
+					}
+				}
 				try {
 					closeAllTransactions();
 				}
@@ -805,6 +819,43 @@ public class ServiceRuntime {
 
 	void incrementAuditingOverhead(long auditingOverhead) {
 		this.auditingOverhead += auditingOverhead;
+	}
+	
+	public ServiceLevelAgreement getSla() {
+		ServiceLevelAgreementProvider slaProvider = getSlaProvider();
+		ServiceLevelAgreement sla = slaProvider == null ? null : slaProvider.getAgreementFor(service);
+		if (sla == null && parent != null) {
+			ServiceLevelAgreement parentSla = parent.getSla();
+			if (parentSla != null && parentSla.getThresholdDuration() != null) {
+				// if we contribute to more than 50% of the parent threshold, we should make ourselves known
+				sla = new ServiceLevelAgreement() {
+					@Override
+					public Long getThresholdDuration() {
+						return (long) (parentSla.getThresholdDuration() / 2.0);
+					}
+					@Override
+					public EventSeverity getSeverity() {
+						return EventSeverity.WARNING;
+					}
+					@Override
+					public boolean isExplicit() {
+						return false;
+					}
+				};
+			}
+		}
+		return sla;
+	}
+
+	public ServiceLevelAgreementProvider getSlaProvider() {
+		if (slaProvider == null && parent != null) {
+			return parent.getSlaProvider();
+		}
+		return slaProvider;
+	}
+
+	public void setSlaProvider(ServiceLevelAgreementProvider slaProvider) {
+		this.slaProvider = slaProvider;
 	}
 	
 }
