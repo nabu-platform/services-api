@@ -60,6 +60,10 @@
 			<artifactId>events-api</artifactId>
 		</dependency>
 		<dependency>
+			<groupId>be.nabu.libs.cluster</groupId>
+			<artifactId>cluster-api</artifactId>
+		</dependency>
+		<dependency>
 			<groupId>be.nabu.utils</groupId>
 			<artifactId>utils-cep</artifactId>
 		</dependency>
