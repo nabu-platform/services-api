@@ -53,7 +53,12 @@ public class ServiceUtils {
 	}
 	
 	public static void setServiceContext(ServiceRuntime runtime, String context) {
-		runtime.getContext().put("service.context", context);
+		if (runtime == null && ServiceRuntime.getGlobalContext() != null) {
+			ServiceRuntime.getGlobalContext().put("service.context", context);
+		}
+		else {
+			runtime.getContext().put("service.context", context);
+		}
 	}
 	
 	public static String getServiceContext(ServiceRuntime runtime) {
