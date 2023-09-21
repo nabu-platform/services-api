@@ -32,7 +32,7 @@ public class ServiceException extends Exception {
 	private String id;
 	
 	// whether or not this exception has been reported already
-	private boolean reported;
+	private boolean reported, whitelisted;
 	
 	private void calculateServiceStack() {
 		ServiceRuntime runtime = ServiceRuntime.getRuntime();
@@ -158,6 +158,14 @@ public class ServiceException extends Exception {
 
 	public void setId(String id) {
 		this.id = id;
+	}
+
+	public boolean isWhitelisted() {
+		return whitelisted;
+	}
+
+	public void setWhitelisted(boolean whitelisted) {
+		this.whitelisted = whitelisted;
 	}
 
 }
