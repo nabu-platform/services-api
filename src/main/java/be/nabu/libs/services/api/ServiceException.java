@@ -31,6 +31,8 @@ public class ServiceException extends Exception {
 	
 	private String id;
 	
+	private Object data;
+	
 	// whether or not this exception has been reported already
 	private boolean reported, whitelisted;
 	
@@ -168,4 +170,11 @@ public class ServiceException extends Exception {
 		this.whitelisted = whitelisted;
 	}
 
+	public Object getData() {
+		return data;
+	}
+
+	public void setData(Object data) {
+		this.data = data;
+	}
 }
