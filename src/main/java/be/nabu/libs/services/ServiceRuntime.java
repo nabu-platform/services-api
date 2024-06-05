@@ -1,8 +1,11 @@
 package be.nabu.libs.services;
 
+import java.io.ByteArrayOutputStream;
 import java.io.Closeable;
+import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
+import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
@@ -25,6 +28,8 @@ import be.nabu.libs.authentication.api.Token;
 import be.nabu.libs.authentication.api.principals.DevicePrincipal;
 import be.nabu.libs.cache.api.Cache;
 import be.nabu.libs.cache.api.CacheProvider;
+import be.nabu.libs.converter.ConverterFactory;
+import be.nabu.libs.events.api.EventTarget;
 import be.nabu.libs.metrics.api.MetricInstance;
 import be.nabu.libs.metrics.api.MetricTimer;
 import be.nabu.libs.services.api.DefinedService;
@@ -38,15 +43,19 @@ import be.nabu.libs.services.api.ServiceLevelAgreementProvider;
 import be.nabu.libs.services.api.ServiceRuntimeTracker;
 import be.nabu.libs.services.api.Transactionable;
 import be.nabu.libs.services.impl.ServiceComplexEvent;
+import be.nabu.libs.services.impl.TransactionReport;
 import be.nabu.libs.types.CollectionHandlerFactory;
 import be.nabu.libs.types.ComplexContentWrapperFactory;
 import be.nabu.libs.types.ParsedPath;
+import be.nabu.libs.types.SimpleTypeWrapperFactory;
 import be.nabu.libs.types.TypeUtils;
 import be.nabu.libs.types.api.CollectionHandlerProvider;
 import be.nabu.libs.types.api.ComplexContent;
 import be.nabu.libs.types.api.ComplexType;
+import be.nabu.libs.types.api.DefinedSimpleType;
 import be.nabu.libs.types.api.Element;
 import be.nabu.libs.types.api.SimpleType;
+import be.nabu.libs.types.binding.json.JSONBinding;
 import be.nabu.libs.types.java.BeanType;
 import be.nabu.utils.cep.api.EventSeverity;
 import be.nabu.utils.cep.impl.CEPUtils;
@@ -272,10 +281,15 @@ public class ServiceRuntime {
 					metrics.log(METRIC_CPU_TIME, (long) (cpuTime / 1000.0));
 				}
 				// store the newly calculated result in the cache if applicable
-				if ((closeables == null || closeables.isEmpty()) && output != null && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
+				if ((closeables == null || closeables.isEmpty()) && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
 					Cache serviceCache = getCache().get(((DefinedService) service).getId());
 					if (serviceCache != null) {
 						timer = metrics == null ? null : metrics.start(METRIC_CACHE_STORE);
+						// @2024-05-28 we can't cache actual null values as "null" is used to detect the absence of a cache
+						// we _can_ however cache an empty object
+						if (output == null) {
+							output = service.getServiceInterface().getOutputDefinition().newInstance();
+						}
 						if (!serviceCache.put(input, output) && metrics != null) {
 							metrics.increment(METRIC_CACHE_FAILURE, 1);
 						}
@@ -341,6 +355,24 @@ public class ServiceRuntime {
 				}
 				else {
 					e.setReported(true);
+				}
+				if (e.getData() != null) {
+					try {
+						if (e.getData() instanceof Iterable) {
+							StringBuilder builder = new StringBuilder();
+							for (Object single : (Iterable<?>) e.getData()) {
+								builder.append(stringify(single)).append("\n");
+							}
+							event.setData(builder.toString());
+						}
+						else {
+							event.setData(stringify(e.getData()));
+						}
+					}
+					catch (Exception f) {
+						// best effort
+						f.printStackTrace();
+					}
 				}
 			}
 			throw e;
@@ -463,7 +495,11 @@ public class ServiceRuntime {
 					}
 				}
 				
-				executionContext.getEventTarget().fire(event, this);
+				EventTarget eventTarget = executionContext.getEventTarget();
+				// it may have been unset by the runtime!
+				if (eventTarget != null) {
+					eventTarget.fire(event, this);
+				}
 			}
 			if (parent != null) {
 				// if the parent does not have the same execution context, we assume that the current context needs to be cleaned up
@@ -501,6 +537,25 @@ public class ServiceRuntime {
 			}
 		}
 	}
+
+	@SuppressWarnings("unchecked")
+	private String stringify(Object data) throws IOException {
+		// check if it's a simple type
+		DefinedSimpleType<? extends Object> wrapped = SimpleTypeWrapperFactory.getInstance().getWrapper().wrap(data.getClass());
+		if (wrapped != null) {
+			return ConverterFactory.getInstance().getConverter().convert(data, String.class);
+		}
+		else {
+			ComplexContent content = data instanceof ComplexContent ? (ComplexContent) data : ComplexContentWrapperFactory.getInstance().getWrapper().wrap(data);
+			if (content != null) {
+				JSONBinding binding = new JSONBinding(content.getType(), Charset.forName("UTF-8"));
+				ByteArrayOutputStream serialized = new ByteArrayOutputStream();
+				binding.marshal(serialized, content);
+				return new String(serialized.toByteArray(), Charset.forName("UTF-8"));
+			}
+		}
+		return null;
+	}
 	
 	private void addOverhead(Date auditStart) {
 		long overhead = new Date().getTime() - auditStart.getTime();
@@ -521,9 +576,15 @@ public class ServiceRuntime {
 				// if we abort a service, we also roll it back as we may have stopped mid-something important
 				if (exception == null && !isAborted()) {
 					getExecutionContext().getTransactionContext().commit(transactionId);
+					if (runtimeTracker != null) {
+						runtimeTracker.report(new TransactionReport(transactionId == null ? getExecutionContext().getTransactionContext().getDefaultTransactionId() : transactionId, "commit"));
+					}
 				}
 				else {
 					getExecutionContext().getTransactionContext().rollback(transactionId);
+					if (runtimeTracker != null) {
+						runtimeTracker.report(new TransactionReport(transactionId == null ? getExecutionContext().getTransactionContext().getDefaultTransactionId() : transactionId, "rollback"));
+					}
 				}
 			}
 			catch (Exception e) {
