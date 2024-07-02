@@ -107,6 +107,8 @@ public class ServiceRuntime {
 	// whether or not a cached result was used
 	private Boolean cachedResult;
 	
+	private Object report;
+	
 	// allows for a context that can exist cross root service runtime and is managed externally by some component
 	private static ThreadLocal<Map<String, Object>> globalContext = new ThreadLocal<Map<String, Object>>();
 	
@@ -172,6 +174,13 @@ public class ServiceRuntime {
 		return executionContext;
 	}
 
+	public void report(Object report) {
+		if (runtimeTracker != null) {
+			runtimeTracker.report(report);
+		}
+		this.report = report;
+	}
+	
 	public ComplexContent run(ComplexContent input) throws ServiceException {
 		ServiceComplexEvent event = null;
 		if (getExecutionContext().getEventTarget() != null) {
@@ -278,7 +287,7 @@ public class ServiceRuntime {
 					// in a typical setup, when 0ms are reported, we generally don't care about the nanoseconds
 					// if that ever becomes a necessarity, we have to revisit other places reporting in ms
 					// at that time we could add a cpuTimeNano or whatever
-					metrics.log(METRIC_CPU_TIME, (long) (cpuTime / 1000.0));
+					metrics.log(METRIC_CPU_TIME, (long) (cpuTime / 1000000.0));
 				}
 				// store the newly calculated result in the cache if applicable
 				if ((closeables == null || closeables.isEmpty()) && isAllowCaching() && getCache() != null && service instanceof DefinedService) {
@@ -492,6 +501,17 @@ public class ServiceRuntime {
 							event.setContext(context.toString());
 						}
 						event.setSeverity(upgradeSeverity);
+						
+						// if we have a report at this time, add it
+						if (report != null && event.getData() == null) {
+							try {
+								event.setData(stringify(report));
+							}
+							catch (Exception e) {
+								// best effort
+								logger.info("Could not serialize report", e);
+							}
+						}
 					}
 				}
 				
