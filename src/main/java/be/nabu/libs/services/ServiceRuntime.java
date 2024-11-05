@@ -34,6 +34,7 @@ import be.nabu.libs.metrics.api.MetricInstance;
 import be.nabu.libs.metrics.api.MetricTimer;
 import be.nabu.libs.services.api.DefinedService;
 import be.nabu.libs.services.api.ExecutionContext;
+import be.nabu.libs.services.api.FeaturedExecutionContext;
 import be.nabu.libs.services.api.Service;
 import be.nabu.libs.services.api.ServiceAuthorizer;
 import be.nabu.libs.services.api.ServiceException;
@@ -94,6 +95,7 @@ public class ServiceRuntime {
 	public static final String DEFAULT_CACHE_TIMEOUT = "be.nabu.services.cacheTimeout";
 	public static final String NO_AUTHENTICATION = "AUTHORIZATION-0";
 	public static final String NO_AUTHORIZATION = "AUTHORIZATION-1";
+	public static final String ENABLED_FEATURES = "enabledFeatures";
 	private String correlationId;
 	
 	private WeakHashMap<ComplexType, List<ParsedPath>> closeables = new WeakHashMap<ComplexType, List<ParsedPath>>();
@@ -182,6 +184,7 @@ public class ServiceRuntime {
 	}
 	
 	public ComplexContent run(ComplexContent input) throws ServiceException {
+		// note to self: we must NEVER run the getContext before the parent is hooked up or we can seriously mess up context inheritance
 		ServiceComplexEvent event = null;
 		if (getExecutionContext().getEventTarget() != null) {
 			event = new ServiceComplexEvent();
@@ -237,6 +240,24 @@ public class ServiceRuntime {
 			if (authorizer != null && !authorizer.canRun(this, input)) {
 				throw new ServiceException(executionContext.getSecurityContext().getToken() == null ? NO_AUTHENTICATION : NO_AUTHORIZATION, "Unauthorized");
 			}
+
+			
+			// check additional features that might have been enabled
+			if (getExecutionContext() instanceof FeaturedExecutionContext) {
+				// enable features in the execution context that were set in the service runtime
+				@SuppressWarnings("unchecked")
+				List<String> additionalFeatures = (List<String>) getContext().get(ENABLED_FEATURES);
+				if (additionalFeatures != null && !additionalFeatures.isEmpty()) {
+					additionalFeatures.removeAll(((FeaturedExecutionContext) getExecutionContext()).getEnabledFeatures());
+					((FeaturedExecutionContext) getExecutionContext()).getEnabledFeatures().addAll(additionalFeatures);
+					// clear it to prevent the overhead of attempting to reset
+					// TODO: this was primarily added for test purposes, it is however not entirely clear if the execution context is correctly reused cross service calls in such a scenario (check the ServiceMethodProvider)
+					// so currently we leave it so it is readded in that particular case
+//					additionalFeatures.clear();
+				}
+			}
+			
+			
 			
 			// map the input so we can inspect it from the service trackers
 			this.input = input;
