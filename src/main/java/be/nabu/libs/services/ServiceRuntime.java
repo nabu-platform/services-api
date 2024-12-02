@@ -174,9 +174,15 @@ public class ServiceRuntime {
 	private Logger logger = LoggerFactory.getLogger(getClass());
 	// you can set one directly on the runtime
 	private ServiceLevelAgreementProvider slaProvider;
+	private long cpuTime;
+	private long threadId = -1;
 	
 	private long getCpuTime() {
-		return ManagementFactory.getThreadMXBean().getThreadCpuTime(Thread.currentThread().getId());
+		return threadId > 0 ? ManagementFactory.getThreadMXBean().getThreadCpuTime(threadId) : 0;
+	}
+	
+	public long getCurrentCpuTime() {
+		return SUPPORTS_CPU_TIME ? getCpuTime() - cpuTime : 0;
 	}
 	
 	public static ServiceRuntime getRuntime() {
@@ -201,6 +207,7 @@ public class ServiceRuntime {
 	}
 	
 	public ComplexContent run(ComplexContent input) throws ServiceException {
+		threadId = Thread.currentThread().getId();
 		// note to self: we must NEVER run the getContext before the parent is hooked up or we can seriously mess up context inheritance
 		ServiceComplexEvent event = null;
 		if (getExecutionContext().getEventTarget() != null) {
@@ -311,8 +318,7 @@ public class ServiceRuntime {
 			if (output == null) {
 				serviceInstance = service.newInstance();
 				MetricTimer timer = metrics == null ? null : metrics.start(METRIC_EXECUTION_TIME);
-				// get the current cpu time of the thread in nanoseconds
-				long cpuTime = SUPPORTS_CPU_TIME ? getCpuTime() : 0;
+				cpuTime = SUPPORTS_CPU_TIME ? getCpuTime() : 0;
 				output = serviceInstance.execute(getExecutionContext(), input);
 				// and after we have run it
 				cpuTime = SUPPORTS_CPU_TIME ? getCpuTime() - cpuTime : 0;

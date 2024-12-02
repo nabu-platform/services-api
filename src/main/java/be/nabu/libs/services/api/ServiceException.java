@@ -53,6 +53,11 @@ public class ServiceException extends Exception {
 	// whether or not this exception has been reported already
 	private boolean reported, whitelisted;
 	
+	// by default most service exceptions are triggered automatically by wrappers etc
+	// however you can also trigger a service exception explicitly (e.g. with a throw) as a design decision, for example to whitelist error codes, combine errors into one etc
+	// at that point you want to inform whoever is looking at the exceptions that this one might be different from the implicit wrappers
+	private boolean explicit;
+	
 	private void calculateServiceStack() {
 		ServiceRuntime runtime = ServiceRuntime.getRuntime();
 		while (runtime != null) {
@@ -194,4 +199,13 @@ public class ServiceException extends Exception {
 	public void setData(Object data) {
 		this.data = data;
 	}
+
+	public boolean isExplicit() {
+		return explicit;
+	}
+
+	public void setExplicit(boolean explicit) {
+		this.explicit = explicit;
+	}
+	
 }
