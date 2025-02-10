@@ -113,7 +113,7 @@ public class ServiceRuntime {
 	public static final String NO_AUTHENTICATION = "AUTHORIZATION-0";
 	public static final String NO_AUTHORIZATION = "AUTHORIZATION-1";
 	public static final String ENABLED_FEATURES = "enabledFeatures";
-	private String correlationId;
+	private String correlationId, narrativeId;
 	
 	private WeakHashMap<ComplexType, List<ParsedPath>> closeables = new WeakHashMap<ComplexType, List<ParsedPath>>();
 	private static ThreadLocal<ServiceRuntime> runtime = new ThreadLocal<ServiceRuntime>();
@@ -929,6 +929,59 @@ public class ServiceRuntime {
 
 	public void setCorrelationId(String correlationId) {
 		this.correlationId = correlationId;
+	}
+	
+	/**
+	 * Narrative ids are meant to be hierarchical in nature (child inherits narrative from parent)
+	 * Any enrichment the child does is limited to its scope (and its child scopes) though
+	 * This means when nesting the same narrative, parent x adds it, child y does not add it (narrative is unique), child y tries to remove it and does so from the local context. however the parent retains the narrative until it unsets it
+	 */
+	public String getNarrativeId() {
+		if (narrativeId == null && getParent() != null) {
+			narrativeId = getParent().getNarrativeId();
+		}
+		return narrativeId;
+	}
+
+	public void startNarrative(String id) {
+		if (narrativeId == null && getParent() != null) {
+			narrativeId = getParent().getNarrativeId();
+		}
+		if (narrativeId == null) {
+			narrativeId = id;
+		}
+		else if (narrativeId.indexOf(id) < 0) {
+			narrativeId += ":" + id;
+		}
+	}
+	
+	public void stopNarrative(String id) {
+		if (narrativeId != null) {
+			int indexOf = narrativeId.indexOf(id);
+			if (indexOf == 0) {
+				narrativeId = narrativeId.substring(0, id.length());
+			}
+			if (indexOf >= 0) {
+				narrativeId = narrativeId.substring(0, indexOf)
+					+ narrativeId.substring(indexOf + id.length());
+			}
+			// if it was the only narrative id, we have nothing left
+			if (narrativeId.length() == 0) {
+				narrativeId = null;
+			}
+			// if it was the first of many, we are left with a leading ":"
+			else if (narrativeId.startsWith(":")) {
+				narrativeId = narrativeId.substring(1);
+			}
+			// if it was the last of many, we are left with a trailing ":"
+			else if (narrativeId.endsWith(":")) {
+				narrativeId = narrativeId.substring(0, narrativeId.length() - 1);
+			}
+			// if it was in between, we have a double :: somewhere
+			else {
+				narrativeId = narrativeId.replace("::", ":");
+			}
+		}
 	}
 
 	public Boolean getCachedResult() {
