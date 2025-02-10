@@ -48,6 +48,9 @@ public class ServiceException extends Exception {
 	
 	private String id;
 	
+	// an identifier that can be used to find the source of the exception (e.g. the throw)
+	private String sourceId;
+	
 	private Object data;
 	
 	// whether or not this exception has been reported already
@@ -207,5 +210,13 @@ public class ServiceException extends Exception {
 	public void setExplicit(boolean explicit) {
 		this.explicit = explicit;
 	}
-	
+
+	public String getSourceId() {
+		return sourceId;
+	}
+
+	public void setSourceId(String sourceId) {
+		this.sourceId = sourceId;
+	}
+
 }

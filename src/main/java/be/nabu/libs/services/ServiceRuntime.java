@@ -395,6 +395,7 @@ public class ServiceRuntime {
 			}
 			if (event != null) {
 				CEPUtils.enrich(event, e);
+				event.setSourceId(e.getSourceId());
 				event.setContext(e.getServiceStack().toString());
 				event.setCode(e.getCode());
 				event.setReason(e.getDescription());
