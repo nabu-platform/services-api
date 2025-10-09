@@ -167,6 +167,8 @@ public class ServiceRuntime {
 	 * Total auditing overhead
 	 */
 	private long auditingOverhead = 0;
+	
+	private String narrativeSeparator = ":";
 
 	private ServiceInstance serviceInstance;
 	private ComplexContent input;
@@ -942,6 +944,26 @@ public class ServiceRuntime {
 		}
 		return narrativeId;
 	}
+	
+	public NarrativeParts getNarrativeParts() {
+		NarrativeParts narrativeParts = new NarrativeParts();
+		HashMap<String, String> values = new HashMap<String, String>();
+		List<String> ids = new ArrayList<String>();
+		narrativeParts.setIds(ids);
+		narrativeParts.setValues(values);
+		if (narrativeId != null) {
+			for (String part : narrativeId.split(narrativeSeparator)) {
+				int indexOf = part.indexOf('=');
+				if (indexOf < 0) {
+					ids.add(part);
+				}
+				else {
+					values.put(part.substring(0, indexOf), part.substring(indexOf + 1));
+				}
+			}
+		}
+		return narrativeParts;
+	}
 
 	public void startNarrative(String id) {
 		if (narrativeId == null && getParent() != null) {
@@ -951,35 +973,64 @@ public class ServiceRuntime {
 			narrativeId = id;
 		}
 		else if (narrativeId.indexOf(id) < 0) {
-			narrativeId += ":" + id;
+			narrativeId += narrativeSeparator + id;
+		}
+	}
+	
+	public void startNarrative(String key, String value) {
+		if (value != null) {
+			startNarrative(key + "=" + value);
+		}
+	}
+	
+	public void stopNarrative(String key, String value) {
+		if (value == null) {
+			stopNarrative(key);
+		}
+		else {
+			stopNarrative(key + "=" + value);
 		}
 	}
 	
 	public void stopNarrative(String id) {
 		if (narrativeId != null) {
-			int indexOf = narrativeId.indexOf(id);
-			if (indexOf == 0) {
-				narrativeId = narrativeId.substring(0, id.length());
-			}
+			// first check if it exists as key/value pair
+			int indexOf = narrativeId.indexOf(id + "=");
 			if (indexOf >= 0) {
-				narrativeId = narrativeId.substring(0, indexOf)
-					+ narrativeId.substring(indexOf + id.length());
+				int nextSeparator = narrativeId.indexOf(narrativeSeparator, indexOf);
+				// the last one
+				if (nextSeparator < 0) {
+					narrativeId = narrativeId.substring(0, indexOf);
+				}
+				else {
+					narrativeId = narrativeId.substring(0, indexOf) + narrativeId.substring(nextSeparator);
+				}
+			}
+			else {
+				indexOf = narrativeId.indexOf(id);
+				if (indexOf == 0) {
+					narrativeId = narrativeId.substring(0, id.length());
+				}
+				if (indexOf >= 0) {
+					narrativeId = narrativeId.substring(0, indexOf)
+						+ narrativeId.substring(indexOf + id.length());
+				}
 			}
 			// if it was the only narrative id, we have nothing left
 			if (narrativeId.length() == 0) {
 				narrativeId = null;
 			}
 			// if it was the first of many, we are left with a leading ":"
-			else if (narrativeId.startsWith(":")) {
-				narrativeId = narrativeId.substring(1);
+			else if (narrativeId.startsWith(narrativeSeparator)) {
+				narrativeId = narrativeId.substring(narrativeSeparator.length());
 			}
 			// if it was the last of many, we are left with a trailing ":"
-			else if (narrativeId.endsWith(":")) {
-				narrativeId = narrativeId.substring(0, narrativeId.length() - 1);
+			else if (narrativeId.endsWith(narrativeSeparator)) {
+				narrativeId = narrativeId.substring(0, narrativeId.length() - narrativeSeparator.length());
 			}
 			// if it was in between, we have a double :: somewhere
 			else {
-				narrativeId = narrativeId.replace("::", ":");
+				narrativeId = narrativeId.replace(narrativeSeparator + narrativeSeparator, narrativeSeparator);
 			}
 		}
 	}
