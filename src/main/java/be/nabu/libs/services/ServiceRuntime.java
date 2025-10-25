@@ -573,7 +573,10 @@ public class ServiceRuntime {
 				// TODO: an alternative implementation (if needed) could be added where the transactions of this context are passed to the parent for management
 				// this is however currently not necessary
 				try {
-					if (!parent.executionContext.equals(executionContext)) {
+					// @2025-10-24: slight difference which compensates for concepts like "combinedexecutioncontext", the contexts themselves don't match, but they do share a transaction context
+					// since it is only transactions that we are managing here, it _should_ be fine to check for equality there
+					if (!parent.executionContext.getTransactionContext().equals(executionContext.getTransactionContext())) {
+//					if (!parent.executionContext.equals(executionContext)) {
 						closeAllTransactions();
 					}
 				}
