@@ -32,6 +32,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.WeakHashMap;
+import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
@@ -178,6 +179,7 @@ public class ServiceRuntime {
 	private ServiceLevelAgreementProvider slaProvider;
 	private long cpuTime;
 	private long threadId = -1;
+	private String spanId;
 	
 	private long getCpuTime() {
 		return threadId > 0 ? ManagementFactory.getThreadMXBean().getThreadCpuTime(threadId) : 0;
@@ -195,6 +197,8 @@ public class ServiceRuntime {
 		this.service = service;
 		this.executionContext = executionContext;
 		this.id = idGenerator.getAndIncrement();
+		// added much later than the "id"
+		this.spanId = generateSpanId();
 	}
 	
 	public ExecutionContext getExecutionContext() {
@@ -218,6 +222,7 @@ public class ServiceRuntime {
 			event.setEventCategory("service");
 			event.setEventName("service-execute");
 			event.setCorrelationId(getCorrelationId());
+			event.setSpanId(spanId);
 			// we don't want these events at the info level
 			// in a lot of cases, handling the events requires more service executions and if we log all that by default, we get infinite loops...?
 			// also: TMI, we got metrics by default
@@ -251,6 +256,9 @@ public class ServiceRuntime {
 						throw new IllegalStateException("A circular reference in service runtimes has been found for service: " + (service instanceof DefinedService ? ((DefinedService) service).getId() : service));
 					}
 					checking = checking.parent;
+				}
+				if (event != null) { 
+					event.setParentSpanId(parent.getSpanId());
 				}
 			}
 			parent.child = this;
@@ -1090,5 +1098,32 @@ public class ServiceRuntime {
 	public void setSlaProvider(ServiceLevelAgreementProvider slaProvider) {
 		this.slaProvider = slaProvider;
 	}
+
+	public String getSpanId() {
+		return spanId;
+	}
 	
+	// HexFormat is not available in all java versions we use...
+//	private static final HexFormat HEX = HexFormat.of();
+	private static final char[] HEX_ARRAY = "0123456789abcdef".toCharArray();
+
+	public static String generateSpanId() {
+		// nextLong() gives 64 bits of entropy
+		long id = ThreadLocalRandom.current().nextLong();
+
+		// Ensure it's not the 'invalid' all-zeros ID
+		while (id == 0) {
+			id = ThreadLocalRandom.current().nextLong();
+		}
+//		return HEX.toHexDigits(id);
+
+		char[] result = new char[16];
+
+	    for (int i = 15; i >= 0; i--) {
+	        result[i] = HEX_ARRAY[(int)(id & 0xF)];
+	        id >>>= 4;
+	    }
+
+	    return new String(result);
+	}
 }
