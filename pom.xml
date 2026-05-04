@@ -67,5 +67,10 @@
 			<groupId>be.nabu.libs.types</groupId>
 			<artifactId>types-binding-json</artifactId>
 		</dependency>
+		<dependency>
+			<groupId>io.opentelemetry</groupId>
+			<artifactId>opentelemetry-api</artifactId>
+			<version>1.59.0</version>
+		</dependency>
 	</dependencies>
 </project>

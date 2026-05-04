@@ -21,6 +21,12 @@ import be.nabu.utils.cep.impl.ComplexEventImpl;
 
 public class ServiceComplexEvent extends ComplexEventImpl {
 	private Boolean cached;
+	private Boolean cacheFailed;
+	private Long cacheRetrieveMs;
+	private Long cacheStoreMs;
+	private Long executionTimeMs;
+	private Long cpuTimeMs;
+	private Long auditOverheadMs;
 	private Long threshold;
 
 	public Boolean getCached() {
@@ -34,5 +40,41 @@ public class ServiceComplexEvent extends ComplexEventImpl {
 	}
 	public void setThreshold(Long slaThreshold) {
 		this.threshold = slaThreshold;
+	}
+	public Boolean getCacheFailed() {
+		return cacheFailed;
+	}
+	public void setCacheFailed(Boolean cacheFailed) {
+		this.cacheFailed = cacheFailed;
+	}
+	public Long getCacheRetrieveMs() {
+		return cacheRetrieveMs;
+	}
+	public void setCacheRetrieveMs(Long cacheRetrieveMs) {
+		this.cacheRetrieveMs = cacheRetrieveMs;
+	}
+	public Long getCacheStoreMs() {
+		return cacheStoreMs;
+	}
+	public void setCacheStoreMs(Long cacheStoreMs) {
+		this.cacheStoreMs = cacheStoreMs;
+	}
+	public Long getExecutionTimeMs() {
+		return executionTimeMs;
+	}
+	public void setExecutionTimeMs(Long executionTimeMs) {
+		this.executionTimeMs = executionTimeMs;
+	}
+	public Long getCpuTimeMs() {
+		return cpuTimeMs;
+	}
+	public void setCpuTimeMs(Long cpuTimeMs) {
+		this.cpuTimeMs = cpuTimeMs;
+	}
+	public Long getAuditOverheadMs() {
+		return auditOverheadMs;
+	}
+	public void setAuditOverheadMs(Long auditOverheadMs) {
+		this.auditOverheadMs = auditOverheadMs;
 	}
 }

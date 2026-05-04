@@ -26,15 +26,25 @@ import java.nio.charset.Charset;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Stack;
 import java.util.UUID;
 import java.util.WeakHashMap;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
+
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.SpanContext;
+import io.opentelemetry.api.trace.TraceFlags;
+import io.opentelemetry.api.trace.TraceState;
+import io.opentelemetry.context.Context;
+import io.opentelemetry.context.Scope;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -81,6 +91,7 @@ import be.nabu.utils.cep.impl.CEPUtils;
 
 public class ServiceRuntime {
 
+	private Stack<ExecutionFlag> executionFlags;
 	private static boolean SUPPORTS_CPU_TIME = false;
 	
 	static {
@@ -180,6 +191,7 @@ public class ServiceRuntime {
 	private long cpuTime;
 	private long threadId = -1;
 	private String spanId;
+	private transient Scope otelScope;
 	
 	private long getCpuTime() {
 		return threadId > 0 ? ManagementFactory.getThreadMXBean().getThreadCpuTime(threadId) : 0;
@@ -193,6 +205,36 @@ public class ServiceRuntime {
 		return runtime.get();
 	}
 	
+	private Stack<ExecutionFlag> getExecutionFlags() {
+		if (parent != null) {
+			return parent.getExecutionFlags();
+		}
+		if (executionFlags == null) {
+			executionFlags = new Stack<>();
+		}
+		return executionFlags;
+	}
+	
+	/**
+	 * Currently this assumes everyone using this perfectly handles the pop.
+	 * Given the private nature of this feature and the ways it would fail if this isn't so, this is OK for now.
+	 * Might need refactoring in the future
+	 */
+	public Runnable pushExecutionFlags(ExecutionFlag...flags) {
+		if (flags != null && flags.length > 0) {
+			Stack<ExecutionFlag> executionFlags = getExecutionFlags();
+			for (ExecutionFlag flag : flags) {
+				executionFlags.push(flag);
+			}
+			return () -> {
+				for (ExecutionFlag flag : flags) {
+					executionFlags.pop();
+				}
+			};
+		}
+		return () -> {};
+	}
+		
 	public ServiceRuntime(Service service, ExecutionContext executionContext) {
 		this.service = service;
 		this.executionContext = executionContext;
@@ -212,8 +254,32 @@ public class ServiceRuntime {
 		this.report = report;
 	}
 	
+	// the default severity for this execution (if nothing else influences it)
+	private EventSeverity getDefaultSeverity() {
+		// by default all service executions are set at the debug level because it is way too much information to capture it all (by default we cut off at info level for logging)
+		// however, for otel we want spans at the debug level to capture more detail
+		EventSeverity severity = EventSeverity.DEBUG;
+		// however this is still waaay too much for spans, so i've decided that things run by the "root" system principal (perm checks for rest services etc etc) is ignored by default and we want to focus on things triggered by actual users.
+		Token token = executionContext.getSecurityContext().getToken();
+		if (token != null) {
+			// we can't see the object directly here, might need a restructure. the goal is to mark internal processes lower prio
+			if ("root".equalsIgnoreCase(token.getName()) && token.getClass().getSimpleName().equals("SystemPrincipal")) {
+				severity = EventSeverity.TRACE;
+			}
+		}
+		// when will this no longer be needed....? :|
+		final EventSeverity finalSeverity = severity;
+		// if there are execution flags, let's check if any flag demotes the severity, for example loops are demoted because they an lead to explosions (especially for larger services)
+		Optional<ExecutionFlag> first = getExecutionFlags().stream()
+			.filter(e -> e.getSeverity().getLevel() < finalSeverity.getLevel())
+			.min(Comparator.comparingInt(e -> e.getSeverity().getLevel()));
+		
+		return first.isPresent() ? first.get().getSeverity() : severity;
+	}
+	
 	public ComplexContent run(ComplexContent input) throws ServiceException {
 		threadId = Thread.currentThread().getId();
+		startOtelScope();
 		// note to self: we must NEVER run the getContext before the parent is hooked up or we can seriously mess up context inheritance
 		ServiceComplexEvent event = null;
 		if (getExecutionContext().getEventTarget() != null) {
@@ -223,11 +289,8 @@ public class ServiceRuntime {
 			event.setEventName("service-execute");
 			event.setCorrelationId(getCorrelationId());
 			event.setSpanId(spanId);
-			// we don't want these events at the info level
-			// in a lot of cases, handling the events requires more service executions and if we log all that by default, we get infinite loops...?
-			// also: TMI, we got metrics by default
-			event.setSeverity(EventSeverity.DEBUG);
-			
+			// we don't want these events at the info level, this is waaay too much information
+			event.setSeverity(getDefaultSeverity());
 			if (service instanceof DefinedService) {
 				event.setArtifactId(((DefinedService) service).getId());
 			}
@@ -267,6 +330,10 @@ public class ServiceRuntime {
 		
 		ServiceLevelAgreement sla = getSla();
 		MetricInstance metrics = null;
+		Long executionTimeMs = null;
+		Long cacheRetrieveMs = null;
+		Long cacheStoreMs = null;
+		Boolean cacheFailed = null;
 		try {
 			running.add(this);
 
@@ -311,7 +378,9 @@ public class ServiceRuntime {
 				Cache serviceCache = getCache().get(((DefinedService) service).getId());
 				if (serviceCache != null) {
 					MetricTimer timer = metrics == null ? null : metrics.start(METRIC_CACHE_RETRIEVE);
+					long cacheRetrieveStart = System.nanoTime();
 					output = (ComplexContent) serviceCache.get(input);
+					cacheRetrieveMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - cacheRetrieveStart);
 					if (timer != null) {
 						timer.stop();
 					}
@@ -328,8 +397,10 @@ public class ServiceRuntime {
 			if (output == null) {
 				serviceInstance = service.newInstance();
 				MetricTimer timer = metrics == null ? null : metrics.start(METRIC_EXECUTION_TIME);
+				long executionStart = System.nanoTime();
 				cpuTime = SUPPORTS_CPU_TIME ? getCpuTime() : 0;
 				output = serviceInstance.execute(getExecutionContext(), input);
+				executionTimeMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - executionStart);
 				// and after we have run it
 				cpuTime = SUPPORTS_CPU_TIME ? getCpuTime() - cpuTime : 0;
 				cachedResult = false;
@@ -348,12 +419,15 @@ public class ServiceRuntime {
 					Cache serviceCache = getCache().get(((DefinedService) service).getId());
 					if (serviceCache != null) {
 						timer = metrics == null ? null : metrics.start(METRIC_CACHE_STORE);
+						long cacheStoreStart = System.nanoTime();
 						// @2024-05-28 we can't cache actual null values as "null" is used to detect the absence of a cache
 						// we _can_ however cache an empty object
 						if (output == null) {
 							output = service.getServiceInterface().getOutputDefinition().newInstance();
 						}
-						if (!serviceCache.put(input, output) && metrics != null) {
+						cacheFailed = !serviceCache.put(input, output);
+						cacheStoreMs = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - cacheStoreStart);
+						if (cacheFailed && metrics != null) {
 							metrics.increment(METRIC_CACHE_FAILURE, 1);
 						}
 						if (timer != null) {
@@ -458,6 +532,16 @@ public class ServiceRuntime {
 			if (event != null) {
 				event.setStarted(started);
 				event.setStopped(new Date());
+				event.setExecutionTimeMs(executionTimeMs);
+				event.setCacheRetrieveMs(cacheRetrieveMs);
+				event.setCacheStoreMs(cacheStoreMs);
+				event.setCacheFailed(cacheFailed);
+				if (SUPPORTS_CPU_TIME) {
+					event.setCpuTimeMs((long) (cpuTime / 1000000.0));
+				}
+				if (auditingOverhead > 0) {
+					event.setAuditOverheadMs(auditingOverhead);
+				}
 				
 				// if it's a debug event, upgrade it to INFO in certain conditions that we want to track
 				if (event.getSeverity() == EventSeverity.DEBUG) {
@@ -576,6 +660,7 @@ public class ServiceRuntime {
 					eventTarget.fire(event, this);
 				}
 			}
+			stopOtelScope();
 			if (parent != null) {
 				// if the parent does not have the same execution context, we assume that the current context needs to be cleaned up
 				// TODO: an alternative implementation (if needed) could be added where the transactions of this context are passed to the parent for management
@@ -1107,7 +1192,7 @@ public class ServiceRuntime {
 //	private static final HexFormat HEX = HexFormat.of();
 	private static final char[] HEX_ARRAY = "0123456789abcdef".toCharArray();
 
-	public static String generateSpanId() {
+	private static String generateSpanId() {
 		// nextLong() gives 64 bits of entropy
 		long id = ThreadLocalRandom.current().nextLong();
 
@@ -1125,5 +1210,88 @@ public class ServiceRuntime {
 	    }
 
 	    return new String(result);
+	}
+
+	private void startOtelScope() {
+		if (otelScope != null) {
+			return;
+		}
+		String traceId = normalizeTraceId(getCorrelationId());
+		if (traceId == null) {
+			return;
+		}
+		SpanContext spanContext = SpanContext.createFromRemoteParent(traceId, spanId, TraceFlags.getSampled(), TraceState.getDefault());
+		Span span = Span.wrap(spanContext);
+		Context context = Context.current().with(span);
+		otelScope = context.makeCurrent();
+//		String actualSpanId = spanContext.getSpanId();
+	}
+
+	private void stopOtelScope() {
+		if (otelScope == null) {
+			return;
+		}
+		otelScope.close();
+		otelScope = null;
+	}
+
+	private static boolean isValidTraceId(String traceId) {
+		if (traceId == null) {
+			return false;
+		}
+		String value = traceId.trim();
+		if (value.length() != 32) {
+			return false;
+		}
+		boolean allZeros = true;
+		for (int i = 0; i < value.length(); i++) {
+			char ch = value.charAt(i);
+			int digit = Character.digit(ch, 16);
+			if (digit < 0) {
+				return false;
+			}
+			if (digit != 0) {
+				allZeros = false;
+			}
+		}
+		return !allZeros;
+	}
+
+	private static boolean isValidSpanId(String spanId) {
+		if (spanId == null) {
+			return false;
+		}
+		String value = spanId.trim();
+		if (value.length() != 16) {
+			return false;
+		}
+		boolean allZeros = true;
+		for (int i = 0; i < value.length(); i++) {
+			char ch = value.charAt(i);
+			int digit = Character.digit(ch, 16);
+			if (digit < 0) {
+				return false;
+			}
+			if (digit != 0) {
+				allZeros = false;
+			}
+		}
+		return !allZeros;
+	}
+
+	private static String normalizeTraceId(String value) {
+		if (isValidTraceId(value)) {
+			return value.trim();
+		}
+		if (value == null) {
+			return null;
+		}
+		String trimmed = value.trim();
+		int index = trimmed.indexOf(':');
+		if (index < 0 || index == trimmed.length() - 1) {
+			return null;
+		}
+		String candidate = trimmed.substring(index + 1).trim();
+		return isValidTraceId(candidate) ? candidate : null;
 	}
 }
