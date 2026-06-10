@@ -17,8 +17,6 @@
 
 package be.nabu.libs.services.api;
 
-import java.util.List;
-
-public interface ServiceLevelAgreementProvider {
-	public List<ServiceLevelAgreement> getAgreementsFor(Service service);
+public interface DefinedServiceLevelAgreement extends ServiceLevelAgreement {
+	public String getServiceId();
 }

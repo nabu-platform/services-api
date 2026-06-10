@@ -19,6 +19,9 @@ package be.nabu.libs.services.api;
 
 import java.util.List;
 
-public interface ServiceLevelAgreementProvider {
-	public List<ServiceLevelAgreement> getAgreementsFor(Service service);
+import javax.jws.WebResult;
+
+public interface ServiceLevelAgreementListProvider {
+	@WebResult(name = "agreements")
+	public List<DefinedServiceLevelAgreement> getAllAgreements();
 }

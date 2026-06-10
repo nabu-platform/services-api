@@ -328,7 +328,7 @@ public class ServiceRuntime {
 		}
 		runtime.set(this);
 		
-		ServiceLevelAgreement sla = getSla();
+		List<ServiceLevelAgreement> agreements = getSlas();
 		MetricInstance metrics = null;
 		Long executionTimeMs = null;
 		Long cacheRetrieveMs = null;
@@ -556,7 +556,7 @@ public class ServiceRuntime {
 					boolean partialUpgrade = false;
 					Token token = executionContext.getSecurityContext().getToken();
 					// we want to ignore system token actions, these are usually automated actions
-					if (token != null && token.getRealm().equals("$system")) {
+					if (token != null && "$system".equals(token.getRealm())) {
 						partialUpgrade = true;
 					}
 					if (serviceSource != null && (serviceSource.equals("startup") || serviceSource.equals("glue"))) {
@@ -571,21 +571,47 @@ public class ServiceRuntime {
 
 					EventSeverity upgradeSeverity = EventSeverity.INFO;
 					// we always upgrade services with an SLA
-					if (sla != null) {
-						// if we have an official sla, we always want to upgrade
-						// for an unofficial sla, we only upgrade if we reach the threshold
-						upgrade = sla.isExplicit();
-						Long thresholdDuration = sla.getThresholdDuration();
-						event.setThreshold(sla.getThresholdDuration());
-						// if we surpassed the threshold, log it
-						if (thresholdDuration != null && event.getStopped().getTime() - event.getStarted().getTime() > thresholdDuration) {
-							// upgrade!
-							upgrade = true;
-							event.setCode("SLA-THRESHOLD-EXCEEDED");	
-							upgradeSeverity = sla.getSeverity(); // EventSeverity.WARNING
+					if (agreements != null && !agreements.isEmpty()) {
+						Long lowestThresholdDuration = null;
+						String lowestThresholdName = null;
+						boolean breached = false;
+						for (ServiceLevelAgreement agreement : agreements) {
+							if (agreement == null) {
+								continue;
+							}
+							// if we have an official sla, we always want to upgrade
+							// for an unofficial sla, we only upgrade if we reach the threshold
+							upgrade |= Boolean.TRUE.equals(agreement.isExplicit());
+							Long thresholdDuration = agreement.getThresholdDuration();
+							if (thresholdDuration != null && (lowestThresholdDuration == null || thresholdDuration < lowestThresholdDuration)) {
+								lowestThresholdDuration = thresholdDuration;
+								lowestThresholdName = agreement.getName();
+							}
+							// if we surpassed the threshold, log it
+							if (thresholdDuration != null && event.getStopped().getTime() - event.getStarted().getTime() > thresholdDuration) {
+								upgrade = true;
+								breached = true;
+								event.setCode("SLA-THRESHOLD-EXCEEDED");
+								event.setThresholdName(agreement.getName());
+								EventSeverity agreementSeverity = agreement.getSeverity();
+								if (agreementSeverity != null && agreementSeverity.getLevel() > upgradeSeverity.getLevel()) {
+									upgradeSeverity = agreementSeverity;
+									event.setThreshold(thresholdDuration);
+								}
+								else if (agreementSeverity != null && agreementSeverity.getLevel() == upgradeSeverity.getLevel()) {
+									Long currentThreshold = event.getThreshold();
+									if (currentThreshold == null || thresholdDuration < currentThreshold) {
+										event.setThreshold(thresholdDuration);
+									}
+								}
+							}
+						}
+						if (!breached) {
+							event.setThreshold(lowestThresholdDuration);
+							event.setThresholdName(lowestThresholdName);
 						}
 						// we must also log "success", otherwise we can't calculate the percentage of threshold breaches!
-						else if (sla.isExplicit()) {
+						if (!breached && upgrade) {
 							event.setCode("SLA-THRESHOLD-MAINTAINED");
 						}
 					}
@@ -1147,35 +1173,47 @@ public class ServiceRuntime {
 		this.auditingOverhead += auditingOverhead;
 	}
 	
-	public ServiceLevelAgreement getSla() {
+	public List<ServiceLevelAgreement> getSlas() {
 		ServiceLevelAgreementProvider slaProvider = getSlaProvider();
-		ServiceLevelAgreement sla = slaProvider == null ? null : slaProvider.getAgreementFor(service);
-		if (sla == null && parent != null) {
-			ServiceLevelAgreement parentSla = parent.getSla();
-			if (parentSla != null && parentSla.getThresholdDuration() != null) {
-				// if we contribute to more than 50% of the parent threshold, we should make ourselves known
-				sla = new ServiceLevelAgreement() {
-					@Override
-					public Long getThresholdDuration() {
-						return (long) (parentSla.getThresholdDuration() / 2.0);
+		List<ServiceLevelAgreement> agreements = slaProvider == null ? null : slaProvider.getAgreementsFor(service);
+		if ((agreements == null || agreements.isEmpty()) && parent != null) {
+			List<ServiceLevelAgreement> parentAgreements = parent.getSlas();
+			if (parentAgreements != null && !parentAgreements.isEmpty()) {
+				agreements = new ArrayList<ServiceLevelAgreement>();
+				for (ServiceLevelAgreement parentAgreement : parentAgreements) {
+					if (parentAgreement != null && parentAgreement.getThresholdDuration() != null) {
+						// if we contribute to more than 50% of the parent threshold, we should make ourselves known
+						agreements.add(new ServiceLevelAgreement() {
+							@Override
+							public String getName() {
+								return parentAgreement.getName() == null ? null : parentAgreement.getName() + ":derived";
+							}
+							@Override
+							public Long getThresholdDuration() {
+								return (long) (parentAgreement.getThresholdDuration() / 2.0);
+							}
+							@Override
+							public EventSeverity getSeverity() {
+								return EventSeverity.WARNING;
+							}
+							@Override
+							public Boolean isExplicit() {
+								return false;
+							}
+						});
 					}
-					@Override
-					public EventSeverity getSeverity() {
-						return EventSeverity.WARNING;
-					}
-					@Override
-					public boolean isExplicit() {
-						return false;
-					}
-				};
+				}
 			}
 		}
-		return sla;
+		return agreements;
 	}
 
 	public ServiceLevelAgreementProvider getSlaProvider() {
-		if (slaProvider == null && parent != null) {
-			return parent.getSlaProvider();
+		if (slaProvider == null) {
+			if (parent != null) {
+				return parent.getSlaProvider();
+			}
+			return executionContext == null || executionContext.getServiceContext() == null ? null : executionContext.getServiceContext().getServiceLevelAgreementProvider();
 		}
 		return slaProvider;
 	}

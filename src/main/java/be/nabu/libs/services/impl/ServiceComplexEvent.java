@@ -28,6 +28,7 @@ public class ServiceComplexEvent extends ComplexEventImpl {
 	private Long cpuTimeMs;
 	private Long auditOverheadMs;
 	private Long threshold;
+	private String thresholdName;
 
 	public Boolean getCached() {
 		return cached;
@@ -40,6 +41,12 @@ public class ServiceComplexEvent extends ComplexEventImpl {
 	}
 	public void setThreshold(Long slaThreshold) {
 		this.threshold = slaThreshold;
+	}
+	public String getThresholdName() {
+		return thresholdName;
+	}
+	public void setThresholdName(String thresholdName) {
+		this.thresholdName = thresholdName;
 	}
 	public Boolean getCacheFailed() {
 		return cacheFailed;
