@@ -347,8 +347,9 @@ public class ServiceRuntime {
 			if (getExecutionContext() instanceof FeaturedExecutionContext) {
 				// enable features in the execution context that were set in the service runtime
 				@SuppressWarnings("unchecked")
-				List<String> additionalFeatures = (List<String>) getContext().get(ENABLED_FEATURES);
-				if (additionalFeatures != null && !additionalFeatures.isEmpty()) {
+				List<String> configuredFeatures = (List<String>) getContext().get(ENABLED_FEATURES);
+				if (configuredFeatures != null && !configuredFeatures.isEmpty()) {
+					List<String> additionalFeatures = new ArrayList<String>(configuredFeatures);
 					additionalFeatures.removeAll(((FeaturedExecutionContext) getExecutionContext()).getEnabledFeatures());
 					((FeaturedExecutionContext) getExecutionContext()).getEnabledFeatures().addAll(additionalFeatures);
 					// clear it to prevent the overhead of attempting to reset
